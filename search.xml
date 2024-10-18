@@ -403,6 +403,58 @@ int main(){
       </tags>
   </entry>
   <entry>
+    <title>CVE-2021-24086 TCPIP拒绝服务漏洞分析</title>
+    <url>/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="0x01漏洞描述"><a href="#0x01漏洞描述" class="headerlink" title="0x01漏洞描述"></a>0x01漏洞描述</h2><p>Windows IPv6协议栈存在的一处拒绝服务漏洞，漏洞的根本原因是IPv6的嵌套分片机制中，当尝试递归重组嵌套的分片时会计算内部有效载荷中包含的所有扩展标头，当重组扩展头约为0xffff字节的数据包时，tcpip!IPv6ReassembleDatagram中发生的NULL指针解引用发生崩溃。</p>
+<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><p>漏洞是在tcpip!Ipv6pReassembleDatagram函数中，向rax中写入数据时导致崩溃。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108162657004.png"></p>
+<h3 id="tcpip-Ipv6pReassembleDatagram"><a href="#tcpip-Ipv6pReassembleDatagram" class="headerlink" title="tcpip!Ipv6pReassembleDatagram"></a>tcpip!Ipv6pReassembleDatagram</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108144319506.png"></p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108150549114.png"></p>
+<h3 id="NdisGetDataBuffer"><a href="#NdisGetDataBuffer" class="headerlink" title="NdisGetDataBuffer"></a>NdisGetDataBuffer</h3><pre class="line-numbers language-none"><code class="language-none">NDIS_EXPORTED_ROUTINE PVOID NdisGetDataBuffer(
+  [in]           NET_BUFFER *NetBuffer,    //指向NET_BUFFER的指针
+  [in]           ULONG      BytesNeeded,   //请求的数据的连续的字节数
+  [in, optional] PVOID      Storage,       //指向缓冲区的指针;如果调用方未提供任何缓冲区，则为 NULL 。 缓冲区的大小必须大于或等于 BytesNeeded 中指定的字节数。 如果此值不是 NULL，并且请求的数据不是连续的，则 NDIS 会将请求的数据复制到 存储 指示的区域。  
+  [in]           ULONG      AlignMultiple, //幂对齐
+  [in]           ULONG      AlignOffset    //对齐倍数的偏移量
+);
+
+NdisGetDataBuffer 返回指向连续数据的开头的指针，或者返回 NULL。
+如果 NetBuffer 参数指向的 NET_BUFFER 结构中NET_BUFFER_DATA结构的 DataLength 成员小于 BytesNeeded 参数中的值，则返回值为 NULL。
+如果缓冲区中请求的数据是连续的，则返回值是指向 NDIS 提供的位置的指针。 如果数据不连续，NDIS 使用 存储 参数，如下所示：
+如果 Storage 参数为非 NULL，则 NDIS 会将数据复制到 存储中的缓冲区。 返回值是传递给 Storage 参数的指针。
+如果 Storage 参数为 NULL，则返回值为 NULL。
+由于无法映射数据缓冲区的低资源条件，返回值也可能为 NULL 。 即使数据连续或存储参数为非 NULL，也可能发生这种情况。<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>NdisGetDataBuffer函数返回数据指针或者NULL，rax是NdisGetDataBuffer函数的返回值，当赋值为0，之后赋值数据没有判断是否是空指针，就会导致异常。</p>
+<h3 id="ndis-NdisGetDataBuffer"><a href="#ndis-NdisGetDataBuffer" class="headerlink" title="ndis!NdisGetDataBuffer"></a>ndis!NdisGetDataBuffer</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108152123775.png"></p>
+<p>NetBuffer-&gt;DataLength小于传进来的第二个参数BytesNeeded就会返回0。</p>
+<h3 id="tcpip-NetioRetreatNetBuffer"><a href="#tcpip-NetioRetreatNetBuffer" class="headerlink" title="tcpip!NetioRetreatNetBuffer"></a>tcpip!NetioRetreatNetBuffer</h3><p>在调用ndis!NdisGetDataBuffer之前调用了tcpip!NetioRetreatNetBuffer函数</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109102806617.png"></p>
+<p>函数调用之前，NET_BUFFER-&gt;CurrentMdlOffset还没有设置，会调用NdisRetreatNetBufferDataStart函数设置NET_BUFFER结构。</p>
+<p>NdisRetreatNetBufferDataStart会把NET_BUFFER-&gt;DataLength设置为0x10,函数返回0</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105241377.png"></p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105650123.png"></p>
+<p>a2 BytesNeeded是v3+0x28，v3是a2偏移0x68，a2是Ipv6pReceiveFragment函数中由IppCreateInReassemblySet生成，满足条件后才会调用tcpip!Ipv6pReassembleDatagram进行重组。</p>
+<h3 id="Ipv6pReceiveFragment"><a href="#Ipv6pReceiveFragment" class="headerlink" title="Ipv6pReceiveFragment"></a>Ipv6pReceiveFragment</h3><p>Ipv6pReceiveFragment函数作用是处理分片，当最后一个分片校验通过，就会调用tcpip!Ipv6pReassembleDatagram函数进行重组。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109110612827.png"></p>
+<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>攻击机：kali2022<br>靶机：win10专业版1709（16299.125）</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164353456.png"></p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164441542.png"></p>
+<p>NdisGetDataBuffer有返回NULL的情况，可以使NET_BUFFER为NULL，NdisGetDataBuffer会返回NULL，就会触发BSOD空指针引用。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109113544500.png"></p>
+<h3 id="补丁分析"><a href="#补丁分析" class="headerlink" title="补丁分析"></a>补丁分析</h3><p>Ipv6pReassembleDatagram增加了判断，当重组数据包options_data_length和fragment_sum_length和大于0xFFFF会调用IppDeleteFromReassmblySet函数删除这个包的信息，跳过重组。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140212506.png"></p>
+<p>在NetioRetreaNetBuffer函数调用处将第二个参数长度变成32位，避免后续调用NdisGetDataBuffer参数不一致。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140232843.png"></p>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>CVE-2021-1732 win32K内核提权漏洞分析</title>
     <url>/2023/01/05/CVE-2021-1732%20Win10%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[<h2 id="背景知识"><a href="#背景知识" class="headerlink" title="背景知识"></a>背景知识</h2><p>内存破坏类内核提权漏洞一般是由C/C++的不安全操作引发，最常见的是Win32k组件中由于Callback机制导致的UAF漏洞。Windows操作系统设计初期，Win32k子系统是在用户态的，从Windows NT4开始，这部分代码移到了内核态，内核态增加了一个Win32k.sys模块，导致3个不安全的因素1.新的系统调用（1100+syscalls）2.用户模式回调（User-mode Callback）3.用户态和内核态之间的共享数据（Share data）。win32k是微软Windows子系统的图形GUI组件，该组件被用于Windows操作系统桌面的图形打印。由于win32k架构的原因，win32k的内核组件需要通过用户模式回调函数对用户模式下的代码进行调用，方便窗口的创建和管理。Win32k内核函数（如xxxCreateWindowEx）会通过用户进程PEBKernelCallBackTable生成回调函数（如xxxClientAllocWindowClassExtraBytes）,当用户模式回调函数完成后，会执行NtCallbackReturn将预期的返回参数传回内核，由于这些回调函数无状态特性，可以造成许多与对象锁定机制有关的漏洞。Win32k漏洞通常会利用tagWND数据结构的桌面对象，然后借助内核读写原语转化为纯数据攻击。</p>
@@ -1194,58 +1246,6 @@ SetWindowLongPtr(hTargetWnd, TAGWND_BODY_REL_VALUE_OFF, 0);
 
 <h2 id="0x03-补丁分析"><a href="#0x03-补丁分析" class="headerlink" title="0x03 补丁分析"></a>0x03 补丁分析</h2><p>补丁打在了win32kfull!xxxCreateWindowEx</p>
 <p><img src="/2023/01/05/CVE-2021-1732%20Win10%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220809111624710.png"></p>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>CVE-2021-24086 TCPIP拒绝服务漏洞分析</title>
-    <url>/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="0x01漏洞描述"><a href="#0x01漏洞描述" class="headerlink" title="0x01漏洞描述"></a>0x01漏洞描述</h2><p>Windows IPv6协议栈存在的一处拒绝服务漏洞，漏洞的根本原因是IPv6的嵌套分片机制中，当尝试递归重组嵌套的分片时会计算内部有效载荷中包含的所有扩展标头，当重组扩展头约为0xffff字节的数据包时，tcpip!IPv6ReassembleDatagram中发生的NULL指针解引用发生崩溃。</p>
-<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><p>漏洞是在tcpip!Ipv6pReassembleDatagram函数中，向rax中写入数据时导致崩溃。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108162657004.png"></p>
-<h3 id="tcpip-Ipv6pReassembleDatagram"><a href="#tcpip-Ipv6pReassembleDatagram" class="headerlink" title="tcpip!Ipv6pReassembleDatagram"></a>tcpip!Ipv6pReassembleDatagram</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108144319506.png"></p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108150549114.png"></p>
-<h3 id="NdisGetDataBuffer"><a href="#NdisGetDataBuffer" class="headerlink" title="NdisGetDataBuffer"></a>NdisGetDataBuffer</h3><pre class="line-numbers language-none"><code class="language-none">NDIS_EXPORTED_ROUTINE PVOID NdisGetDataBuffer(
-  [in]           NET_BUFFER *NetBuffer,    //指向NET_BUFFER的指针
-  [in]           ULONG      BytesNeeded,   //请求的数据的连续的字节数
-  [in, optional] PVOID      Storage,       //指向缓冲区的指针;如果调用方未提供任何缓冲区，则为 NULL 。 缓冲区的大小必须大于或等于 BytesNeeded 中指定的字节数。 如果此值不是 NULL，并且请求的数据不是连续的，则 NDIS 会将请求的数据复制到 存储 指示的区域。  
-  [in]           ULONG      AlignMultiple, //幂对齐
-  [in]           ULONG      AlignOffset    //对齐倍数的偏移量
-);
-
-NdisGetDataBuffer 返回指向连续数据的开头的指针，或者返回 NULL。
-如果 NetBuffer 参数指向的 NET_BUFFER 结构中NET_BUFFER_DATA结构的 DataLength 成员小于 BytesNeeded 参数中的值，则返回值为 NULL。
-如果缓冲区中请求的数据是连续的，则返回值是指向 NDIS 提供的位置的指针。 如果数据不连续，NDIS 使用 存储 参数，如下所示：
-如果 Storage 参数为非 NULL，则 NDIS 会将数据复制到 存储中的缓冲区。 返回值是传递给 Storage 参数的指针。
-如果 Storage 参数为 NULL，则返回值为 NULL。
-由于无法映射数据缓冲区的低资源条件，返回值也可能为 NULL 。 即使数据连续或存储参数为非 NULL，也可能发生这种情况。<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>NdisGetDataBuffer函数返回数据指针或者NULL，rax是NdisGetDataBuffer函数的返回值，当赋值为0，之后赋值数据没有判断是否是空指针，就会导致异常。</p>
-<h3 id="ndis-NdisGetDataBuffer"><a href="#ndis-NdisGetDataBuffer" class="headerlink" title="ndis!NdisGetDataBuffer"></a>ndis!NdisGetDataBuffer</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108152123775.png"></p>
-<p>NetBuffer-&gt;DataLength小于传进来的第二个参数BytesNeeded就会返回0。</p>
-<h3 id="tcpip-NetioRetreatNetBuffer"><a href="#tcpip-NetioRetreatNetBuffer" class="headerlink" title="tcpip!NetioRetreatNetBuffer"></a>tcpip!NetioRetreatNetBuffer</h3><p>在调用ndis!NdisGetDataBuffer之前调用了tcpip!NetioRetreatNetBuffer函数</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109102806617.png"></p>
-<p>函数调用之前，NET_BUFFER-&gt;CurrentMdlOffset还没有设置，会调用NdisRetreatNetBufferDataStart函数设置NET_BUFFER结构。</p>
-<p>NdisRetreatNetBufferDataStart会把NET_BUFFER-&gt;DataLength设置为0x10,函数返回0</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105241377.png"></p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105650123.png"></p>
-<p>a2 BytesNeeded是v3+0x28，v3是a2偏移0x68，a2是Ipv6pReceiveFragment函数中由IppCreateInReassemblySet生成，满足条件后才会调用tcpip!Ipv6pReassembleDatagram进行重组。</p>
-<h3 id="Ipv6pReceiveFragment"><a href="#Ipv6pReceiveFragment" class="headerlink" title="Ipv6pReceiveFragment"></a>Ipv6pReceiveFragment</h3><p>Ipv6pReceiveFragment函数作用是处理分片，当最后一个分片校验通过，就会调用tcpip!Ipv6pReassembleDatagram函数进行重组。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109110612827.png"></p>
-<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>攻击机：kali2022<br>靶机：win10专业版1709（16299.125）</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164353456.png"></p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164441542.png"></p>
-<p>NdisGetDataBuffer有返回NULL的情况，可以使NET_BUFFER为NULL，NdisGetDataBuffer会返回NULL，就会触发BSOD空指针引用。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109113544500.png"></p>
-<h3 id="补丁分析"><a href="#补丁分析" class="headerlink" title="补丁分析"></a>补丁分析</h3><p>Ipv6pReassembleDatagram增加了判断，当重组数据包options_data_length和fragment_sum_length和大于0xFFFF会调用IppDeleteFromReassmblySet函数删除这个包的信息，跳过重组。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140212506.png"></p>
-<p>在NetioRetreaNetBuffer函数调用处将第二个参数长度变成32位，避免后续调用NdisGetDataBuffer参数不一致。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140232843.png"></p>
 ]]></content>
       <categories>
         <category>CVE</category>
@@ -2055,6 +2055,62 @@ IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows
       </tags>
   </entry>
   <entry>
+    <title>CVE-2022-37810 Tenda路由器命令注入分析</title>
+    <url>/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>Tenda AC1206(v15.03.06.23)存在formWriteFacMac命令注入漏洞，可以通过mac参数执行任意命令。</p>
+<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><p>US_AC1206V1.0RTL_V15.03.06.23_multi_TD01</p>
+<h4 id="提取固件"><a href="#提取固件" class="headerlink" title="提取固件"></a>提取固件</h4><p>提取固件运行httpd可执行文件</p>
+<pre class="line-numbers language-none"><code class="language-none">binwalk -Me US_AC1206V1.0RTL_V15.03.06.23_multi_TD01.bin <span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<h4 id="qemu执行"><a href="#qemu执行" class="headerlink" title="qemu执行"></a>qemu执行</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121103057802.png"></p>
+<p>mips小端</p>
+<pre class="line-numbers language-none"><code class="language-none">cd _US_AC1206V1.0RTL_V15.03.06.23_multi_TD01.bin.extracted/squashfs-root/
+cp $(which qemu-mipsel-static) ./
+sudo ./qemu-mipsel-static -L ./ ./bin/httpd
+sudo chroot ./ ./qemu-mipsel-static ./bin/httpd<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121103628491.png"></p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121104528268.png"></p>
+<p>main函数中0x00433a68有对apmib_init的判断，patch掉，bnez改为beqz</p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121111549227.png"></p>
+<p>ConnectCfm也需要改掉</p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121112030522.png"></p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121161405750.png"></p>
+<h4 id="添加网卡"><a href="#添加网卡" class="headerlink" title="添加网卡"></a>添加网卡</h4><pre class="line-numbers language-none"><code class="language-none">sudo brctl addbr br0 
+sudo brctl addif br0 eth0
+sudo ifconfig br0 up
+sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121161943583.png"></p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121162340458.png"></p>
+<h4 id="formWriteFacMac"><a href="#formWriteFacMac" class="headerlink" title="formWriteFacMac"></a>formWriteFacMac</h4><p>漏洞点在http的formWriteFacMac函数，IDA定位关键函数fromWirteFacMac，控制了mac参数就能利用doSystemCmd实现命令注入。</p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121162811780.png"></p>
+<h4 id="doSystemCmd"><a href="#doSystemCmd" class="headerlink" title="doSystemCmd"></a>doSystemCmd</h4><p>doSystemCmd函数不在httpd中，在libcommon.so中</p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121164709994.png"></p>
+<p>交叉引用查看formWriteFacMac函数调用链</p>
+<pre class="line-numbers language-none"><code class="language-none">main -&gt; initWebs -&gt; formDefineTenDa -&gt; websFormDefine('WriteFacMac',formWriteFacMac);<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>formDefineTenDa包含路由器接口和对应的处理函数，通过websFormDefine注册后，WriteFacMac会和formWriteFacMac形成绑定，在goform下产生接口WriteFacMac调用formWriteFacMac</p>
+<p>192.168.130.137/goform/WriteFacMac</p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121174942212.png"></p>
+<h4 id="initWebs"><a href="#initWebs" class="headerlink" title="initWebs"></a>initWebs</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121170833769.png"></p>
+<h4 id="formDefineTenDa"><a href="#formDefineTenDa" class="headerlink" title="formDefineTenDa"></a>formDefineTenDa</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121165748345.png"></p>
+<h4 id="websGetVar"><a href="#websGetVar" class="headerlink" title="websGetVar"></a>websGetVar</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121172710514.png"></p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121172721758.png"></p>
+<p>判断wp中的mac参数是否存在，不存在返回默认值00:01:02:11:22:33，存在则返回对应值，没有做任何过滤，因此可以直接构造。</p>
+<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>当wp判断mac参数是否存在时，返回值没有做任何过滤，因此可以直接构造。</p>
+<pre class="line-numbers language-none"><code class="language-none">192.168.130.137/goform/WriteFacMac?mac=00:01:02:11:22:33 || ls<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121175540394.png"></p>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>CVE-2022-34713 MSDT目录遍历漏洞分析</title>
     <url>/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>CVE-2022-34713是Microsoft Windows支持诊断工具（MSDT）RCE漏洞。存在路径穿越的脆弱性，攻击者可以遍历目录，将恶意可执行程序放置Window启动文件夹。<br>影响版本：</p>
@@ -2498,59 +2554,66 @@ CLEANUP:
       </tags>
   </entry>
   <entry>
-    <title>CVE-2022-37810 Tenda路由器命令注入分析</title>
-    <url>/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>Tenda AC1206(v15.03.06.23)存在formWriteFacMac命令注入漏洞，可以通过mac参数执行任意命令。</p>
-<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><p>US_AC1206V1.0RTL_V15.03.06.23_multi_TD01</p>
-<h4 id="提取固件"><a href="#提取固件" class="headerlink" title="提取固件"></a>提取固件</h4><p>提取固件运行httpd可执行文件</p>
-<pre class="line-numbers language-none"><code class="language-none">binwalk -Me US_AC1206V1.0RTL_V15.03.06.23_multi_TD01.bin <span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<h4 id="qemu执行"><a href="#qemu执行" class="headerlink" title="qemu执行"></a>qemu执行</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121103057802.png"></p>
-<p>mips小端</p>
-<pre class="line-numbers language-none"><code class="language-none">cd _US_AC1206V1.0RTL_V15.03.06.23_multi_TD01.bin.extracted/squashfs-root/
-cp $(which qemu-mipsel-static) ./
-sudo ./qemu-mipsel-static -L ./ ./bin/httpd
-sudo chroot ./ ./qemu-mipsel-static ./bin/httpd<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121103628491.png"></p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121104528268.png"></p>
-<p>main函数中0x00433a68有对apmib_init的判断，patch掉，bnez改为beqz</p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121111549227.png"></p>
-<p>ConnectCfm也需要改掉</p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121112030522.png"></p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121161405750.png"></p>
-<h4 id="添加网卡"><a href="#添加网卡" class="headerlink" title="添加网卡"></a>添加网卡</h4><pre class="line-numbers language-none"><code class="language-none">sudo brctl addbr br0 
-sudo brctl addif br0 eth0
-sudo ifconfig br0 up
-sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121161943583.png"></p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121162340458.png"></p>
-<h4 id="formWriteFacMac"><a href="#formWriteFacMac" class="headerlink" title="formWriteFacMac"></a>formWriteFacMac</h4><p>漏洞点在http的formWriteFacMac函数，IDA定位关键函数fromWirteFacMac，控制了mac参数就能利用doSystemCmd实现命令注入。</p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121162811780.png"></p>
-<h4 id="doSystemCmd"><a href="#doSystemCmd" class="headerlink" title="doSystemCmd"></a>doSystemCmd</h4><p>doSystemCmd函数不在httpd中，在libcommon.so中</p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121164709994.png"></p>
-<p>交叉引用查看formWriteFacMac函数调用链</p>
-<pre class="line-numbers language-none"><code class="language-none">main -&gt; initWebs -&gt; formDefineTenDa -&gt; websFormDefine('WriteFacMac',formWriteFacMac);<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>formDefineTenDa包含路由器接口和对应的处理函数，通过websFormDefine注册后，WriteFacMac会和formWriteFacMac形成绑定，在goform下产生接口WriteFacMac调用formWriteFacMac</p>
-<p>192.168.130.137/goform/WriteFacMac</p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121174942212.png"></p>
-<h4 id="initWebs"><a href="#initWebs" class="headerlink" title="initWebs"></a>initWebs</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121170833769.png"></p>
-<h4 id="formDefineTenDa"><a href="#formDefineTenDa" class="headerlink" title="formDefineTenDa"></a>formDefineTenDa</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121165748345.png"></p>
-<h4 id="websGetVar"><a href="#websGetVar" class="headerlink" title="websGetVar"></a>websGetVar</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121172710514.png"></p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121172721758.png"></p>
-<p>判断wp中的mac参数是否存在，不存在返回默认值00:01:02:11:22:33，存在则返回对应值，没有做任何过滤，因此可以直接构造。</p>
-<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>当wp判断mac参数是否存在时，返回值没有做任何过滤，因此可以直接构造。</p>
-<pre class="line-numbers language-none"><code class="language-none">192.168.130.137/goform/WriteFacMac?mac=00:01:02:11:22:33 || ls<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121175540394.png"></p>
+    <title>中国共产党纪律处分条例（2023年12月19日）</title>
+    <url>/2024/10/17/%E4%B8%AD%E5%9B%BD%E5%85%B1%E4%BA%A7%E5%85%9A%E7%BA%AA%E5%BE%8B%E5%A4%84%E5%88%86%E6%9D%A1%E4%BE%8B%EF%BC%882023%E5%B9%B412%E6%9C%8819%E6%97%A5%EF%BC%89/</url>
+    <content><![CDATA[<h2 id="第一编-总则"><a href="#第一编-总则" class="headerlink" title="第一编　总则"></a>第一编　总则</h2><p>  </p>
+<h3 id="第一章-总体要求和适用范围"><a href="#第一章-总体要求和适用范围" class="headerlink" title="第一章　总体要求和适用范围"></a>第一章　总体要求和适用范围</h3><p>  <strong>第一条</strong>　为了维护党章和其他党内法规，严肃党的纪律，纯洁党的组织，保障党员民主权利，教育党员遵纪守法，维护党的团结统一，保证党的理论、路线、方针、政策、决议和国家法律法规的贯彻执行，根据《中国共产党章程》，制定本条例。</p>
+<p>  <strong>第二条</strong>　党的纪律建设必须坚持以马克思列宁主义、毛泽东思想、邓小平理论、“三个代表”重要思想、科学发展观、习近平新时代中国特色社会主义思想为指导，坚持和加强党的全面领导，坚决维护习近平总书记党中央的核心、全党的核心地位，坚决维护以习近平同志为核心的党中央权威和集中统一领导，弘扬伟大建党精神，坚持自我革命，贯彻全面从严治党战略方针，落实新时代党的建设总要求，推动解决大党独有难题、健全全面从严治党体系，全面加强党的纪律建设，为以中国式现代化全面推进强国建设、民族复兴伟业提供坚强纪律保障。</p>
+<p>  <strong>第三条</strong>　党章是最根本的党内法规，是管党治党的总规矩。党的纪律是党的各级组织和全体党员必须遵守的行为规则。党组织和党员必须坚守初心使命，牢固树立政治意识、大局意识、核心意识、看齐意识，始终坚定道路自信、理论自信、制度自信、文化自信，切实践行正确的权力观、政绩观、事业观，自觉遵守和维护党章，严格执行和维护党的纪律，自觉接受党的纪律约束，模范遵守国家法律法规。</p>
+<p>  <strong>第四条</strong>　党的纪律处分工作遵循下列原则：</p>
+<p>  （一）坚持党要管党、全面从严治党。把严的基调、严的措施、严的氛围长期坚持下去，加强对党的各级组织和全体党员的教育、管理和监督，把纪律挺在前面，抓早抓小、防微杜渐。</p>
+<p>  （二）党纪面前一律平等。对违犯党纪的党组织和党员必须严肃、公正执行纪律，党内不允许有任何不受纪律约束的党组织和党员。</p>
+<p>  （三）实事求是。对党组织和党员违犯党纪的行为，应当以事实为依据，以党章、其他党内法规和国家法律法规为准绳，执纪执法贯通，准确认定行为性质，区别不同情况，恰当予以处理。</p>
+<p>  （四）民主集中制。实施党纪处分，应当按照规定程序经党组织集体讨论决定，不允许任何个人或者少数人擅自决定和批准。上级党组织对违犯党纪的党组织和党员作出的处理决定，下级党组织必须执行。</p>
+<p>  （五）惩前毖后、治病救人。处理违犯党纪的党组织和党员，应当实行惩戒与教育相结合，做到宽严相济。</p>
+<p>  <strong>第五条</strong>　深化运用监督执纪“四种形态”，经常开展批评和自我批评，及时进行谈话提醒、批评教育、责令检查、诫勉，让“红红脸、出出汗”成为常态；党纪轻处分、组织调整成为违纪处理的大多数；党纪重处分、重大职务调整的成为少数；严重违纪涉嫌犯罪追究刑事责任的成为极少数。</p>
+<p>  <strong>第六条</strong>　本条例适用于违犯党纪应当受到党纪责任追究的党组织和党员。</p>
+<h3 id="第二章-违纪与纪律处分"><a href="#第二章-违纪与纪律处分" class="headerlink" title="第二章　违纪与纪律处分"></a>第二章　违纪与纪律处分</h3><p>  <strong>第七条</strong>　党组织和党员违反党章和其他党内法规，违反国家法律法规，违反党和国家政策，违反社会主义道德，危害党、国家和人民利益的行为，依照规定应当给予纪律处理或者处分的，都必须受到追究。</p>
+<p>  重点查处党的十八大以来不收敛、不收手，问题线索反映集中、群众反映强烈，政治问题和经济问题交织的腐败案件，违反中央八项规定精神的问题。</p>
+<p>  <strong>第八条</strong>　对党员的纪律处分种类：</p>
+<p>  （一）警告；</p>
+<p>  （二）严重警告；</p>
+<p>  （三）撤销党内职务；</p>
+<p>  （四）留党察看；</p>
+<p>  （五）开除党籍。</p>
+<p>  <strong>第九条</strong>　对于违犯党纪的党组织，上级党组织应当责令其作出书面检查或者给予通报批评。对于严重违犯党纪、本身又不能纠正的党组织，上一级党的委员会在查明核实后，根据情节严重的程度，可以予以：</p>
+<p>  （一）改组；</p>
+<p>  （二）解散。</p>
+<p>  <strong>第十条</strong>　党员受到警告处分一年内、受到严重警告处分一年半内，不得在党内提拔职务或者进一步使用，也不得向党外组织推荐担任高于其原任职务的党外职务或者进一步使用。</p>
+<p>  <strong>第十一条</strong>　撤销党内职务处分，是指撤销受处分党员由党内选举或者组织任命的党内职务。对于在党内担任两个以上职务的，党组织在作处分决定时，应当明确是撤销其一切职务还是一个或者几个职务。如果决定撤销其一个职务，必须撤销其担任的最高职务。如果决定撤销其两个以上职务，则必须从其担任的最高职务开始依次撤销。对于在党外组织担任职务的，应当建议党外组织撤销其党外职务。</p>
+<p>  对于在立案审查中因涉嫌违犯党纪被免职的党员，审查后依照本条例规定应当给予撤销党内职务处分的，应当按照其原任职务给予撤销党内职务处分。对于应当受到撤销党内职务处分，但是本人没有担任党内职务的，应当给予其严重警告处分。同时，在党外组织担任职务的，应当建议党外组织撤销其党外职务。</p>
+<p>  党员受到撤销党内职务处分，或者依照前款规定受到严重警告处分的，二年内不得在党内担任和向党外组织推荐担任与其原任职务相当或者高于其原任职务的职务。</p>
+<p>  <strong>第十二条</strong>　留党察看处分，分为留党察看一年、留党察看二年。对于受到留党察看处分一年的党员，期满后仍不符合恢复党员权利条件的，应当延长一年留党察看期限。留党察看期限最长不得超过二年。</p>
+<p>  党员受留党察看处分期间，没有表决权、选举权和被选举权。留党察看期间，确有悔改表现的，期满后恢复其党员权利；坚持不改或者又发现其他应当受到党纪处分的违纪行为的，应当开除党籍。</p>
+<p>  党员受到留党察看处分，其党内职务自然撤销。对于担任党外职务的，应当建议党外组织撤销其党外职务。受到留党察看处分的党员，恢复党员权利后二年内，不得在党内担任和向党外组织推荐担任与其原任职务相当或者高于其原任职务的职务。</p>
+<p>  <strong>第十三条</strong>　党员受到开除党籍处分，五年内不得重新入党，也不得推荐担任与其原任职务相当或者高于其原任职务的党外职务。另有规定不准重新入党的，依照规定。</p>
+<p>  <strong>第十四条</strong>　党员干部受到党纪处分，需要同时进行组织处理的，党组织应当按照规定给予组织处理。</p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
+<p>  </p>
 ]]></content>
       <categories>
-        <category>CVE</category>
+        <category>工具书</category>
       </categories>
       <tags>
-        <tag>CVE</tag>
+        <tag>党纪处分</tag>
       </tags>
   </entry>
   <entry>
@@ -2580,12 +2643,13 @@ sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span
 <blockquote>
 <p>再这样下去很可怕。</p>
 </blockquote>
-<h2 id="2024-10-18"><a href="#2024-10-18" class="headerlink" title="2024.10.18"></a>2024.10.18</h2>]]></content>
+<h2 id="2024-10-18"><a href="#2024-10-18" class="headerlink" title="2024.10.18"></a>2024.10.18</h2><p>上午填了两张表，日常监督表格注意事项：1.单位名称填写全称，从省开始写；2.调研表方案或者报告全文复制；3.有问题根据政策写，根据xxx，xxx干了xxx。昨晚有同事加班到11点，不知道未来一个月我们组的工作是什么情况。</p>
+]]></content>
       <categories>
-        <category>工作日志</category>
+        <category>工作</category>
       </categories>
       <tags>
-        <tag>工作</tag>
+        <tag>工作日志</tag>
       </tags>
   </entry>
   <entry>
