@@ -96,7 +96,7 @@
     <link href="https://12ule.top/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/"/>
     <id>https://12ule.top/2023/11/16/CVE-2018-18708%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E6%A0%88%E6%BA%A2%E5%87%BA%E5%88%86%E6%9E%90/</id>
     <published>2023-11-16T13:25:27.000Z</published>
-    <updated>2024-10-06T06:27:48.320Z</updated>
+    <updated>2025-06-16T13:21:35.018Z</updated>
     
     
       
@@ -121,7 +121,7 @@
     <link href="https://12ule.top/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/"/>
     <id>https://12ule.top/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/</id>
     <published>2023-11-15T13:25:27.000Z</published>
-    <updated>2024-10-06T06:35:23.310Z</updated>
+    <updated>2025-06-16T13:16:56.642Z</updated>
     
     
       
@@ -146,7 +146,7 @@
     <link href="https://12ule.top/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/"/>
     <id>https://12ule.top/2023/08/24/CVE-2020-1054%20%E8%B6%8A%E7%95%8C%E5%86%99%E5%85%A5%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/</id>
     <published>2023-08-24T13:25:27.000Z</published>
-    <updated>2024-10-06T06:52:41.886Z</updated>
+    <updated>2025-06-16T13:09:55.246Z</updated>
     
     
       
@@ -171,7 +171,7 @@
     <link href="https://12ule.top/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/"/>
     <id>https://12ule.top/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</id>
     <published>2023-05-15T13:25:27.000Z</published>
-    <updated>2024-10-06T06:56:10.014Z</updated>
+    <updated>2025-06-16T13:17:45.044Z</updated>
     
     
       
@@ -196,7 +196,7 @@
     <link href="https://12ule.top/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/"/>
     <id>https://12ule.top/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</id>
     <published>2023-04-16T13:25:27.000Z</published>
-    <updated>2024-10-06T06:35:15.420Z</updated>
+    <updated>2025-06-16T13:15:35.192Z</updated>
     
     
       
@@ -217,11 +217,11 @@
   </entry>
   
   <entry>
-    <title>CVE-2022-21882 Win32K本地提权分析</title>
+    <title>CVE-2022-21882 Win32K内核提权分析</title>
     <link href="https://12ule.top/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/"/>
     <id>https://12ule.top/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/</id>
     <published>2023-03-07T13:25:27.000Z</published>
-    <updated>2024-10-06T06:49:44.946Z</updated>
+    <updated>2025-06-16T13:14:54.114Z</updated>
     
     
       
@@ -246,7 +246,7 @@
     <link href="https://12ule.top/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/"/>
     <id>https://12ule.top/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</id>
     <published>2023-02-06T13:25:27.000Z</published>
-    <updated>2024-10-06T06:08:23.544Z</updated>
+    <updated>2025-06-16T13:13:04.118Z</updated>
     
     
       
@@ -267,11 +267,11 @@
   </entry>
   
   <entry>
-    <title>CVE-2021-1732 win32K内核提权漏洞分析</title>
+    <title>CVE-2021-1732 Win10本地提权漏洞分析</title>
     <link href="https://12ule.top/2023/01/05/CVE-2021-1732%20Win10%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/"/>
     <id>https://12ule.top/2023/01/05/CVE-2021-1732%20Win10%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</id>
     <published>2023-01-05T13:25:27.000Z</published>
-    <updated>2024-10-06T06:45:52.044Z</updated>
+    <updated>2025-06-16T13:12:00.636Z</updated>
     
     
       
