@@ -424,27 +424,80 @@
   </entry>
   
   <entry>
-    <title>《计算机网络自顶向下方法》读书笔记</title>
-    <link href="https://12ule.top/2019/10/20/%E3%80%8A%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C%E8%87%AA%E9%A1%B6%E5%90%91%E4%B8%8B%E6%96%B9%E6%B3%95%E3%80%8B%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
-    <id>https://12ule.top/2019/10/20/%E3%80%8A%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C%E8%87%AA%E9%A1%B6%E5%90%91%E4%B8%8B%E6%96%B9%E6%B3%95%E3%80%8B%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/</id>
-    <published>2019-10-20T15:35:57.000Z</published>
-    <updated>2025-09-21T08:48:50.676Z</updated>
+    <title>mbr引导区</title>
+    <link href="https://12ule.top/2020/01/06/mbr%E5%BC%95%E5%AF%BC%E5%8C%BA/"/>
+    <id>https://12ule.top/2020/01/06/mbr%E5%BC%95%E5%AF%BC%E5%8C%BA/</id>
+    <published>2020-01-06T04:40:58.000Z</published>
+    <updated>2025-09-21T09:42:31.548Z</updated>
     
     
       
       
         
         
-    <summary type="html">&lt;h2 id=&quot;一、计算机网络和因特网&quot;&gt;&lt;a href=&quot;#一、计算机网络和因特网&quot; class=&quot;headerlink&quot; title=&quot;一、计算机网络和因特网&quot;&gt;&lt;/a&gt;一、计算机网络和因特网&lt;/h2&gt;&lt;p&gt;&lt;img</summary>
+    <summary type="html">&lt;h2 id=&quot;功能&quot;&gt;&lt;a href=&quot;#功能&quot; class=&quot;headerlink&quot; title=&quot;功能&quot;&gt;&lt;/a&gt;功能&lt;/h2&gt;&lt;p&gt;一个简单的病毒(不能传播的假病毒)，通过改写mbr,达到不能开机的效果😬&lt;/p&gt;
+&lt;h2 id=&quot;mbr&quot;&gt;&lt;a href=&quot;#mbr&quot;</summary>
         
       
     
     
     
-    <category term="读书笔记" scheme="https://12ule.top/categories/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    <category term="windows" scheme="https://12ule.top/categories/windows/"/>
     
     
-    <category term="计算机网络" scheme="https://12ule.top/tags/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C/"/>
+    <category term="mbr" scheme="https://12ule.top/tags/mbr/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>windows启动过程</title>
+    <link href="https://12ule.top/2019/11/20/windows%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/"/>
+    <id>https://12ule.top/2019/11/20/windows%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/</id>
+    <published>2019-11-20T09:38:47.000Z</published>
+    <updated>2025-09-21T09:40:30.500Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html">&lt;p&gt;记录了一下windows系统的启动过程。&lt;/p&gt;
+&lt;h2 id=&quot;预引导阶段（启动自检阶段）&quot;&gt;&lt;a href=&quot;#预引导阶段（启动自检阶段）&quot; class=&quot;headerlink&quot;</summary>
+        
+      
+    
+    
+    
+    <category term="windows" scheme="https://12ule.top/categories/windows/"/>
+    
+    
+    <category term="windows" scheme="https://12ule.top/tags/windows/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>PE文件</title>
+    <link href="https://12ule.top/2019/10/21/PE%E6%96%87%E4%BB%B6/"/>
+    <id>https://12ule.top/2019/10/21/PE%E6%96%87%E4%BB%B6/</id>
+    <published>2019-10-21T09:19:28.000Z</published>
+    <updated>2025-09-21T09:28:45.817Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html">&lt;p&gt;总结一下pe文件&lt;/p&gt;
+&lt;p&gt;Microsoft为了让程序在Windows上可移植而做的一种文件格式规定。比如exe就是一种PE文件，再印象中Windows操作系统都能执行exe程序，这就是Microsoft做的让程序在Windows平台上实现移植的功能，这个移植功能的实</summary>
+        
+      
+    
+    
+    
+    <category term="PE文件" scheme="https://12ule.top/categories/PE%E6%96%87%E4%BB%B6/"/>
+    
+    
+    <category term="PE文件" scheme="https://12ule.top/tags/PE%E6%96%87%E4%BB%B6/"/>
     
   </entry>
   
