@@ -451,6 +451,58 @@
   </entry>
   
   <entry>
+    <title>fastbin attach</title>
+    <link href="https://12ule.top/2021/08/02/fastbin%20attach/"/>
+    <id>https://12ule.top/2021/08/02/fastbin%20attach/</id>
+    <published>2021-08-02T11:11:03.000Z</published>
+    <updated>2025-09-21T11:30:21.240Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html">&lt;p&gt;fastbin attack是一类漏洞的利用方法，是指所有基于 fastbin 机制的漏洞利用方法。主要利用了fast bin的单链表管理机制&lt;/p&gt;
+&lt;h2 id=&quot;源码&quot;&gt;&lt;a href=&quot;#源码&quot; class=&quot;headerlink&quot;</summary>
+        
+      
+    
+    
+    
+    <category term="漏洞分析" scheme="https://12ule.top/categories/%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/"/>
+    
+    
+    <category term="fastbin attach" scheme="https://12ule.top/tags/fastbin-attach/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>Fastbin Double Free</title>
+    <link href="https://12ule.top/2020/03/17/Fastbin%20Double%20Free/"/>
+    <id>https://12ule.top/2020/03/17/Fastbin%20Double%20Free/</id>
+    <published>2020-03-17T11:21:27.000Z</published>
+    <updated>2025-09-21T11:30:04.486Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html">&lt;p&gt;double free 是任意地址写的一种技巧，指堆上的某块内存被释放后，并没有将指向该堆块的指针清零，那么，我们就可以利用程序的其他部分对该内存进行再次的free。&lt;/p&gt;
+&lt;h2 id=&quot;利用条件&quot;&gt;&lt;a href=&quot;#利用条件&quot; class=&quot;headerlink&quot;</summary>
+        
+      
+    
+    
+    
+    <category term="漏洞分析" scheme="https://12ule.top/categories/%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/"/>
+    
+    
+    <category term="fastbin attach" scheme="https://12ule.top/tags/fastbin-attach/"/>
+    
+  </entry>
+  
+  <entry>
     <title>格式化字符串漏洞</title>
     <link href="https://12ule.top/2020/03/08/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2%E6%BC%8F%E6%B4%9E/"/>
     <id>https://12ule.top/2020/03/08/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2%E6%BC%8F%E6%B4%9E/</id>
@@ -473,58 +525,6 @@
     
     
     <category term="格式化字符串" scheme="https://12ule.top/tags/%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%AD%97%E7%AC%A6%E4%B8%B2/"/>
-    
-  </entry>
-  
-  <entry>
-    <title>mbr引导区</title>
-    <link href="https://12ule.top/2020/01/06/mbr%E5%BC%95%E5%AF%BC%E5%8C%BA/"/>
-    <id>https://12ule.top/2020/01/06/mbr%E5%BC%95%E5%AF%BC%E5%8C%BA/</id>
-    <published>2020-01-06T04:40:58.000Z</published>
-    <updated>2025-09-21T10:01:59.683Z</updated>
-    
-    
-      
-      
-        
-        
-    <summary type="html">&lt;h2 id=&quot;功能&quot;&gt;&lt;a href=&quot;#功能&quot; class=&quot;headerlink&quot; title=&quot;功能&quot;&gt;&lt;/a&gt;功能&lt;/h2&gt;&lt;p&gt;一个简单的病毒(不能传播的假病毒)，通过改写mbr,达到不能开机的效果😬&lt;/p&gt;
-&lt;h2 id=&quot;mbr&quot;&gt;&lt;a href=&quot;#mbr&quot;</summary>
-        
-      
-    
-    
-    
-    <category term="windows" scheme="https://12ule.top/categories/windows/"/>
-    
-    
-    <category term="mbr" scheme="https://12ule.top/tags/mbr/"/>
-    
-  </entry>
-  
-  <entry>
-    <title>windows启动过程</title>
-    <link href="https://12ule.top/2019/11/20/windows%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/"/>
-    <id>https://12ule.top/2019/11/20/windows%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/</id>
-    <published>2019-11-20T09:38:47.000Z</published>
-    <updated>2025-09-21T10:02:02.109Z</updated>
-    
-    
-      
-      
-        
-        
-    <summary type="html">&lt;p&gt;记录了一下windows系统的启动过程。&lt;/p&gt;
-&lt;h2 id=&quot;预引导阶段（启动自检阶段）&quot;&gt;&lt;a href=&quot;#预引导阶段（启动自检阶段）&quot; class=&quot;headerlink&quot;</summary>
-        
-      
-    
-    
-    
-    <category term="windows" scheme="https://12ule.top/categories/windows/"/>
-    
-    
-    <category term="windows" scheme="https://12ule.top/tags/windows/"/>
     
   </entry>
   
