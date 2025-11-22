@@ -6,7 +6,7 @@
   <link href="https://12ule.top/atom.xml" rel="self"/>
   
   <link href="https://12ule.top/"/>
-  <updated>2025-10-20T14:53:40.495Z</updated>
+  <updated>2025-11-22T14:22:26.058Z</updated>
   <id>https://12ule.top/</id>
   
   <author>
@@ -15,6 +15,31 @@
   </author>
   
   <generator uri="https://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>Sqli-Libs(1-20)</title>
+    <link href="https://12ule.top/2025/11/23/Sqli-Libs(1-20)/"/>
+    <id>https://12ule.top/2025/11/23/Sqli-Libs(1-20)/</id>
+    <published>2025-11-23T14:22:12.000Z</published>
+    <updated>2025-11-22T14:22:26.058Z</updated>
+    
+    
+      
+      
+        
+        
+    <summary type="html">&lt;h2 id=&quot;部署&quot;&gt;&lt;a href=&quot;#部署&quot; class=&quot;headerlink&quot;</summary>
+        
+      
+    
+    
+    
+    <category term="渗透测试" scheme="https://12ule.top/categories/%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95/"/>
+    
+    
+    <category term="sql注入" scheme="https://12ule.top/tags/sql%E6%B3%A8%E5%85%A5/"/>
+    
+  </entry>
   
   <entry>
     <title>101种职务犯罪-挪用公款罪</title>
@@ -496,31 +521,6 @@
     
     
     <category term="fastbin attach" scheme="https://12ule.top/tags/fastbin-attach/"/>
-    
-  </entry>
-  
-  <entry>
-    <title>WSL相关</title>
-    <link href="https://12ule.top/2020/09/21/WSL%E7%9B%B8%E5%85%B3/"/>
-    <id>https://12ule.top/2020/09/21/WSL%E7%9B%B8%E5%85%B3/</id>
-    <published>2020-09-21T09:03:53.000Z</published>
-    <updated>2025-09-27T01:27:16.256Z</updated>
-    
-    
-      
-      
-        
-        
-    <summary type="html">&lt;h2 id=&quot;wsl相关&quot;&gt;&lt;a href=&quot;#wsl相关&quot; class=&quot;headerlink&quot; title=&quot;wsl相关&quot;&gt;&lt;/a&gt;wsl相关&lt;/h2&gt;&lt;h3 id=&quot;wsl改位置&quot;&gt;&lt;a href=&quot;#wsl改位置&quot; class=&quot;headerlink&quot;</summary>
-        
-      
-    
-    
-    
-    <category term="windows" scheme="https://12ule.top/categories/windows/"/>
-    
-    
-    <category term="WSL" scheme="https://12ule.top/tags/WSL/"/>
     
   </entry>
   
